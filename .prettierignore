@@ -1,0 +1,12 @@
+node_modules
+dist
+.next
+coverage
+playwright-report
+test-results
+package-lock.json
+apps/web/public
+apps/api/seed/images
+tools/pottery-renderer
+*.webp
+*.png

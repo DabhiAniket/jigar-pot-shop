@@ -1,0 +1,32 @@
+{
+  "name": "@jmh/web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Jigar Matka House storefront and admin (Next.js App Router).",
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --port 3000",
+    "build": "next build",
+    "start": "next start --port 3000",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint .",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@jmh/shared": "*",
+    "motion": "^14.5.0",
+    "next": "16.4.2",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "react-easy-crop": "^6.2.4",
+    "server-only": "^0.0.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.2.0",
+    "eslint-config-next": "16.4.2",
+    "tailwindcss": "^4.3.3"
+  }
+}

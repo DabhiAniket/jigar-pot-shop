@@ -1,0 +1,15 @@
+**/node_modules
+**/.next
+**/dist
+**/coverage
+**/test-results
+**/playwright-report
+**/.env
+**/.env.*
+!**/.env.example
+.data
+apps/api/storage
+.git
+tools/pottery-renderer
+assets/brand-source
+loadtest/results

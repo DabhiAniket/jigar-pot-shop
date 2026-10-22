@@ -1,0 +1,41 @@
+{
+  "name": "jigar-matka-house",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Jigar Matka House — e-commerce platform for handcrafted clay pottery (storefront, admin, API).",
+  "license": "UNLICENSED",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "concurrently -n api,worker,web -c yellow,magenta,cyan \"npm run dev -w @jmh/api\" \"npm run dev:worker -w @jmh/api\" \"npm run dev -w @jmh/web\"",
+    "dev:db": "bash scripts/dev-services.sh start",
+    "dev:db:stop": "bash scripts/dev-services.sh stop",
+    "build": "npm run build -w @jmh/api && npm run build -w @jmh/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "test:e2e": "npm run test:e2e -w @jmh/web",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:migrate": "npm run db:migrate -w @jmh/api",
+    "admin:bootstrap": "npm run admin:bootstrap -w @jmh/api",
+    "seed:demo": "npm run seed:demo -w @jmh/api",
+    "check": "npm run typecheck && npm run lint && npm run test"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@types/node": "^24.0.0",
+    "concurrently": "^9.2.0",
+    "eslint": "^9.39.5",
+    "globals": "^16.4.0",
+    "prettier": "^3.6.0",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.0",
+    "vitest": "^5.0.5"
+  }
+}
