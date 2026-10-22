@@ -17,9 +17,9 @@
 
 - API: `apps/api/.env.example` (validated at startup — the process exits with a clear message on
   invalid or missing values).
-- Web: `apps/web/.env.example`. `API_INTERNAL_URL` is read **at build time** for the rewrite rules
-  (used for local/single-host setups); behind a CDN/LB that routes `/api` and `/media`, it is only
-  used for server-side fetches.
+- Web: `apps/web/.env.example`. `API_INTERNAL_URL` is read at runtime, for server-side fetches and
+  by `proxy.ts`, which forwards browser `/api/v1` and `/media` requests (unless a CDN/LB routes
+  them to the API directly).
 - Compose: `.env.example`.
 
 Important production values: `NODE_ENV=production`, `COOKIE_SECURE=true`, `TRUST_PROXY` = number
@@ -29,6 +29,64 @@ of proxies in front of the API (e.g. `2` for CDN + LB), `PUBLIC_WEB_URL`, `MEDIA
 
 The web tier must sit behind a proxy that sets `X-Forwarded-For` (CDN/LB/nginx) so the API's
 per-visitor rate limits see real client addresses.
+
+## Separate deployments on Vercel (web and API as two projects)
+
+The web app and the API are two independent Vercel projects from the same repository. Browsers
+only talk to the web app: it forwards `/api/v1/*` and `/media/*` to the API (`apps/web/proxy.ts`),
+so the admin session cookie stays first-party and no CORS is needed.
+
+### API project
+
+- **Root Directory** `apps/api`. Everything else comes from `apps/api/vercel.json`: framework
+  "Other", build `npm run build` (tsup bundle), one function `api/index.js` that serves
+  `dist/vercel.js`. Vercel never compiles the TypeScript sources itself.
+- Environment (Production):
+
+  | Variable                                                | Value                                                                              |
+  | ------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+  | `NODE_ENV`                                              | `production`                                                                       |
+  | `APP_SECRET`, `REVALIDATE_SECRET`, `INTERNAL_API_TOKEN` | long random values (the last two shared with web)                                  |
+  | `MONGODB_URI`                                           | Atlas connection string                                                            |
+  | `PUBLIC_WEB_URL`                                        | the web project's production URL, e.g. `https://shop.example.com`                  |
+  | `WEB_REVALIDATE_URL`                                    | `https://shop.example.com/api/revalidate`                                          |
+  | `TRUST_PROXY`                                           | `true` (Vercel sets `X-Forwarded-For` itself)                                      |
+  | `STORAGE_DRIVER`                                        | `s3`, plus `S3_BUCKET`, `S3_REGION`, `S3_ENDPOINT`, keys (e.g. Cloudflare R2)      |
+  | `MEDIA_PUBLIC_BASE_URL`                                 | public URL of the bucket's `public/` prefix (CDN or R2 public domain)              |
+  | `MEDIA_MAX_UPLOAD_MB`                                   | `4` (Vercel Functions accept request bodies up to 4.5 MB)                          |
+  | `REDIS_URL`                                             | recommended (e.g. Upstash `rediss://…`) so rate limits are shared by all instances |
+
+- The API refuses to start on Vercel with `STORAGE_DRIVER=local` (read-only filesystem).
+- Image processing runs inside the upload request (`JOBS_DRIVER=direct`, the default on Vercel),
+  because a function may be frozen once its response is sent. No worker is needed.
+- **Atlas → Network Access** must allow Vercel's addresses (they are not fixed: `0.0.0.0/0` with a
+  strong database password, or Vercel's Secure Compute).
+- Migrations and the first admin are one-off steps run from a machine with the production env:
+  `npm run db:migrate -w @jmh/api` and `npm run admin:bootstrap -w @jmh/api`.
+- Health check: `GET https://<api>/health` (process) and `/ready` (database).
+
+### Web project
+
+- **Root Directory** `apps/web`, framework Next.js (detected). The build script forces
+  `NODE_ENV=production`; a `NODE_ENV=development` variable on the project would otherwise break
+  `next build` ("Cannot read properties of null (reading 'useContext')" on `/_global-error`).
+- Environment: `API_INTERNAL_URL` = the API's production URL, `NEXT_PUBLIC_SITE_URL` = the web URL,
+  `REVALIDATE_SECRET` and `INTERNAL_API_TOKEN` (same values as the API). Do not copy the API's
+  other variables here.
+- `INTERNAL_API_TOKEN` is required in this setup: with it the proxy forwards each visitor's address
+  (`X-Client-IP`), and the API rate-limits per visitor instead of treating all traffic as coming
+  from the web project. The API only trusts that header when the token matches.
+
+### Things to know
+
+- **Deployment Protection**: Vercel protects preview deployments by default. Point the web
+  project's `API_INTERNAL_URL` at the API's _production_ domain (or configure a protection bypass),
+  otherwise the web server gets Vercel's login page instead of JSON.
+- Admin sign-in and checkout check the browser's `Origin` against `PUBLIC_WEB_URL`; use the
+  production web domain (add preview domains to `CORS_ORIGINS` if you test admin on previews).
+- Deploy the API first, then set `API_INTERNAL_URL` on the web project and deploy it, then run the
+  warm-up revalidation from the release procedure.
+- Check the API build locally without deploying: `cd apps/api && npx vercel build`.
 
 ## Release procedure
 

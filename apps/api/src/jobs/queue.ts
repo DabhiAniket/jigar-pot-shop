@@ -17,7 +17,7 @@ export type JobHandlers = {
 };
 
 export interface JobQueue {
-  readonly driver: 'inline' | 'bullmq';
+  readonly driver: 'inline' | 'bullmq' | 'direct';
   enqueue<K extends JobName>(name: K, data: JobPayloads[K]): Promise<void>;
   close(): Promise<void>;
 }
@@ -133,5 +133,30 @@ export function createInlineQueue(handlers: JobHandlers, concurrency = 1): JobQu
       closed = true;
       if (running > 0) await new Promise<void>((resolve) => idle.push(resolve));
     },
+  };
+}
+
+/**
+ * Serverless queue: the job runs before enqueue() resolves, so it finishes within the request
+ * that created it (Vercel may freeze the function once the response is sent). Retries happen
+ * immediately; the final failure is recorded by the handler and not rethrown to the caller.
+ */
+export function createDirectQueue(handlers: JobHandlers): JobQueue {
+  return {
+    driver: 'direct',
+    async enqueue(name, data) {
+      for (let attempt = 1; attempt <= JOB_ATTEMPTS; attempt++) {
+        const isFinalAttempt = attempt === JOB_ATTEMPTS;
+        try {
+          await handlers[name](data, { attemptsMade: attempt, isFinalAttempt });
+          jobsProcessed.inc({ job: name, outcome: 'completed' });
+          return;
+        } catch (error) {
+          jobsProcessed.inc({ job: name, outcome: 'failed' });
+          logger.error({ job: name, attempt, err: (error as Error).message }, 'job failed');
+        }
+      }
+    },
+    async close() {},
   };
 }

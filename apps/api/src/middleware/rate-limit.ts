@@ -27,7 +27,9 @@ export function createLimiterFactory(
 ) {
   // Server-to-server calls from the storefront all originate from the web servers' addresses;
   // they authenticate with a shared token instead of sharing one visitor's rate-limit bucket.
+  // Requests the web proxy forwards on behalf of a visitor (X-Client-IP) are still limited.
   const isInternal = (req: Request) => {
+    if (req.get('x-client-ip')) return false;
     const provided = req.get('x-internal-token');
     return Boolean(internalToken && provided && safeEqual(provided, internalToken));
   };

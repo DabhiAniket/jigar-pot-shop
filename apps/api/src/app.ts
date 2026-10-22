@@ -11,6 +11,7 @@ import { logger } from './lib/logger';
 import { httpDuration, httpRequests, renderMetrics } from './lib/metrics';
 import { getRedis, pingRedis } from './lib/redis';
 import { csrfProtection, loadSession, originCheck } from './middleware/auth';
+import { forwardedClientIp } from './middleware/client-ip';
 import { errorHandler, notFoundHandler } from './middleware/error-handler';
 import { createLimiterFactory } from './middleware/rate-limit';
 import { authRoutes } from './modules/auth/auth.routes';
@@ -37,6 +38,7 @@ export function createApp(ctx: AppContext, state: AppState = { shuttingDown: fal
   app.disable('x-powered-by');
   app.set('trust proxy', config.trustProxy);
   app.set('query parser', 'simple');
+  app.use(forwardedClientIp(config.internalApiToken));
 
   app.use(
     pinoHttp({

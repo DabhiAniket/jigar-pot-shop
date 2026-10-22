@@ -1,6 +1,37 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 const PUBLIC_ADMIN_PATHS = ['/admin/login', '/admin/reset-password'];
+const API_URL = (process.env.API_INTERNAL_URL ?? 'http://localhost:4000').replace(/\/+$/, '');
+const INTERNAL_TOKEN = process.env.INTERNAL_API_TOKEN;
+
+/**
+ * Visitor address as seen by the platform in front of this app. Vercel sets X-Forwarded-For to
+ * the client address; nginx-style proxies append it, so the right-most entry is the one the
+ * nearest trusted proxy observed.
+ */
+function clientIp(request: NextRequest): string | null {
+  const forwarded = request.headers.get('x-forwarded-for');
+  const last = forwarded?.split(',').at(-1)?.trim();
+  return last || request.headers.get('x-real-ip');
+}
+
+/**
+ * Browser calls stay same-origin (/api/v1, /media) so the admin session cookie is first-party;
+ * they are forwarded to the separately deployed API. With INTERNAL_API_TOKEN set, the visitor's
+ * address travels along so the API rate-limits per visitor rather than per web server.
+ */
+function forwardToApi(request: NextRequest) {
+  const { pathname, search } = request.nextUrl;
+  const headers = new Headers(request.headers);
+  headers.delete('x-client-ip');
+  headers.delete('x-internal-token');
+  const ip = clientIp(request);
+  if (INTERNAL_TOKEN && ip) {
+    headers.set('x-client-ip', ip);
+    headers.set('x-internal-token', INTERNAL_TOKEN);
+  }
+  return NextResponse.rewrite(new URL(`${API_URL}${pathname}${search}`), { request: { headers } });
+}
 
 /**
  * Cheap first gate for admin pages: without a session cookie, go straight to sign-in.
@@ -9,6 +40,8 @@ const PUBLIC_ADMIN_PATHS = ['/admin/login', '/admin/reset-password'];
  */
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  if (pathname.startsWith('/api/v1/') || pathname.startsWith('/media/'))
+    return forwardToApi(request);
   if (PUBLIC_ADMIN_PATHS.some((path) => pathname.startsWith(path))) return NextResponse.next();
   const hasSession =
     request.cookies.has('__Host-jmh_session') || request.cookies.has('jmh_session');
@@ -22,5 +55,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/admin/:path*'],
+  matcher: ['/admin/:path*', '/api/v1/:path*', '/media/:path*'],
 };

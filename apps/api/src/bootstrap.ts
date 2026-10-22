@@ -1,7 +1,13 @@
 import { getConfig, type AppConfig } from './config/env';
 import type { AppContext } from './context';
 import { assertTransactionsSupported, connectDatabase } from './db/connection';
-import { createBullQueue, createInlineQueue, type JobHandlers, type JobQueue } from './jobs/queue';
+import {
+  createBullQueue,
+  createDirectQueue,
+  createInlineQueue,
+  type JobHandlers,
+  type JobQueue,
+} from './jobs/queue';
 import { createCache } from './lib/cache';
 import { createMailer } from './lib/mailer';
 import { getRedis } from './lib/redis';
@@ -30,6 +36,9 @@ export function createContext(config: AppConfig = getConfig()): AppContext {
   let jobs: JobQueue;
   if (config.jobsDriver === 'bullmq' && config.redisUrl) {
     jobs = createBullQueue(config.redisUrl);
+  } else if (config.jobsDriver === 'direct') {
+    configureSharp(1);
+    jobs = createDirectQueue(jobHandlers(ctx));
   } else {
     configureSharp(2);
     jobs = createInlineQueue(jobHandlers(ctx), 1);

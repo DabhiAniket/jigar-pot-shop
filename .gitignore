@@ -36,3 +36,6 @@ npm-debug.log*
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Vercel CLI local state and build output
+.vercel

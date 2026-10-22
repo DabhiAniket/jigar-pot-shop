@@ -1,6 +1,5 @@
 import type { NextConfig } from 'next';
 
-const apiUrl = (process.env.API_INTERNAL_URL ?? 'http://localhost:4000').replace(/\/+$/, '');
 const isDev = process.env.NODE_ENV !== 'production';
 
 /**
@@ -42,14 +41,7 @@ const nextConfig: NextConfig = {
   // Product images are pre-optimised into WebP variants by the API pipeline and brand images
   // are optimised at build time, so the Next.js image optimiser is not needed.
   images: { unoptimized: true },
-  async rewrites() {
-    // For local development and simple single-host deployments. In production a load balancer
-    // or CDN should route /api and /media directly to the API / object storage.
-    return [
-      { source: '/api/v1/:path*', destination: `${apiUrl}/api/v1/:path*` },
-      { source: '/media/:path*', destination: `${apiUrl}/media/:path*` },
-    ];
-  },
+  // /api/v1 and /media are forwarded to the API by proxy.ts (it adds the visitor's address).
   async headers() {
     return [
       { source: '/:path*', headers: securityHeaders },

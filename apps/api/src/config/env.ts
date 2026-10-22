@@ -30,7 +30,9 @@ const envSchema = z
       .regex(/^rediss?:\/\//, 'REDIS_URL must start with redis:// or rediss://')
       .optional()
       .or(z.literal('').transform(() => undefined)),
-    JOBS_DRIVER: z.enum(['inline', 'bullmq']).optional(),
+    JOBS_DRIVER: z.enum(['inline', 'bullmq', 'direct']).optional(),
+    // Set by the Vercel runtime.
+    VERCEL: optionalString,
 
     PUBLIC_WEB_URL: z.url(),
     CORS_ORIGINS: optionalString,
@@ -88,6 +90,13 @@ const envSchema = z
             message: `${key} is required when STORAGE_DRIVER=s3`,
           });
       }
+    }
+    if (env.VERCEL && env.STORAGE_DRIVER === 'local') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['STORAGE_DRIVER'],
+        message: 'Vercel functions have a read-only filesystem: set STORAGE_DRIVER=s3',
+      });
     }
     if (env.JOBS_DRIVER === 'bullmq' && !env.REDIS_URL) {
       ctx.addIssue({
@@ -155,7 +164,8 @@ function buildConfig(source: NodeJS.ProcessEnv) {
       autoIndex: env.MONGODB_AUTO_INDEX ?? !isProd,
     },
     redisUrl: env.REDIS_URL ?? null,
-    jobsDriver: env.JOBS_DRIVER ?? (env.REDIS_URL ? 'bullmq' : 'inline'),
+    // Serverless functions may be frozen once the response is sent, so jobs run within the request.
+    jobsDriver: env.JOBS_DRIVER ?? (env.VERCEL ? 'direct' : env.REDIS_URL ? 'bullmq' : 'inline'),
     publicWebUrl: webOrigin,
     corsOrigins: env.CORS_ORIGINS
       ? env.CORS_ORIGINS.split(',').map((origin) => new URL(origin.trim()).origin)

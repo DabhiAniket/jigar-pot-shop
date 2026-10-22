@@ -17,6 +17,7 @@ export WHATSAPP_BUSINESS_NUMBER=919000000001   # obviously fake test number
 export REVALIDATE_SECRET=e2e-revalidate-secret-123
 export WEB_REVALIDATE_URL=http://localhost:3100/api/revalidate
 export RATE_LIMITS=off
+export INTERNAL_API_TOKEN=e2e-internal-token-0123456789abcdef   # test-only; exercises the proxy path
 export LOG_LEVEL=warn
 export BOOTSTRAP_ADMIN_EMAIL=e2e.owner@example.com
 export BOOTSTRAP_ADMIN_PASSWORD='E2e-Temporary-Kiln-2026!'
@@ -41,8 +42,8 @@ case "${1:-}" in
   web)
     cd "$ROOT/apps/web"
     export API_INTERNAL_URL=http://localhost:4100 NEXT_PUBLIC_SITE_URL=http://localhost:3100
-    if [[ "${SKIP_BUILD:-}" != "1" ]]; then npx next build; fi
-    exec npx next start --port 3100
+    if [[ "${SKIP_BUILD:-}" != "1" ]]; then npm run build; fi
+    NODE_ENV=production exec npx next start --port 3100
     ;;
   *) echo "Usage: $0 prepare|api|web"; exit 1 ;;
 esac
