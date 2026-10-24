@@ -1,17 +1,17 @@
 // Builds optimised brand assets for the storefront from the supplied artwork in assets/brand-source.
 //   node scripts/build-brand-assets.mjs
-// Outputs WebP images to apps/web/public/brand/v1 and app icons to apps/web/app.
+// Outputs WebP images to public/brand/v1 and app icons to app/.
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
-const require = createRequire(path.join(root, 'apps/api/package.json'));
+const require = createRequire(path.join(root, 'package.json'));
 const sharp = require('sharp');
 
 const src = (name) => path.join(root, 'assets/brand-source', name);
-const outDir = path.join(root, 'apps/web/public/brand/v1');
-const appDir = path.join(root, 'apps/web/app');
+const outDir = path.join(root, 'public/brand/v1');
+const appDir = path.join(root, 'app');
 await fs.mkdir(outDir, { recursive: true });
 
 const CREAM = { r: 246, g: 240, b: 229, alpha: 1 };

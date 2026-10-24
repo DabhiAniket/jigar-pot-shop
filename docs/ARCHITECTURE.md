@@ -1,5 +1,8 @@
 # Architecture
 
+This describes the whole system. **web** is this repository (`jigar-pot-shop`); **api** and
+**worker** are [`jigar-pot-shop-backend`](https://github.com/DabhiAniket/jigar-pot-shop-backend).
+
 ## Components
 
 ```
@@ -18,8 +21,9 @@ Browser ──► CDN / load balancer ──┬──► web (Next.js, N instanc
   Redis, files in object storage. Any instance can serve any request.
 - **worker** consumes image jobs from Redis (BullMQ) so Sharp never competes with API requests.
   Without Redis (development) jobs run in a bounded in-process queue inside the API.
-- **packages/shared** holds the rules both sides must agree on: Zod input schemas, DTO types,
+- **shared/** holds the rules both sides must agree on: Zod input schemas, DTO types,
   the pricing engine, order state machine, role permissions and the WhatsApp message builder.
+  The backend repository owns it (and tests it); this repository has an exported, read-only copy.
   The **API is the only authority** for prices, discounts, stock and totals; the browser only
   displays server quotes.
 

@@ -1,20 +1,21 @@
 // Converts pottery renders (tools/pottery-renderer output) into:
-//   apps/api/seed/images/...        JPEG sources for the demo seed (sent through the real upload pipeline)
-//   apps/web/public/story/v1/...    WebP assets for the cinematic homepage + lib/story-assets.json
-// Usage: node scripts/build-story-assets.mjs <renders-dir>
+//   public/story/v1/...             WebP assets for the cinematic homepage + lib/story-assets.json
+//   <seed-dir>/...                  optional: JPEG sources for the backend's demo seed
+//                                   (jigar-pot-shop-backend/seed/images; sent through its upload pipeline)
+// Usage: node scripts/build-story-assets.mjs <renders-dir> [<seed-dir>]
 // Safe to re-run; missing render groups are simply skipped.
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
-const require = createRequire(path.join(root, 'apps/api/package.json'));
+const require = createRequire(path.join(root, 'package.json'));
 const sharp = require('sharp');
 
 const renders = path.resolve(process.argv[2] ?? 'renders');
-const seedDir = path.join(root, 'apps/api/seed/images');
-const storyDir = path.join(root, 'apps/web/public/story/v1');
-const manifestFile = path.join(root, 'apps/web/lib/story-assets.json');
+const seedDir = process.argv[3] ? path.resolve(process.argv[3]) : null;
+const storyDir = path.join(root, 'public/story/v1');
+const manifestFile = path.join(root, 'lib/story-assets.json');
 const exists = (p) =>
   fs.access(p).then(
     () => true,
@@ -34,7 +35,7 @@ try {
 
 // 1. Seed sources (JPEG keeps the repo small; the pipeline re-encodes to WebP anyway).
 let seedCount = 0;
-for (const group of ['products', 'categories']) {
+for (const group of seedDir ? ['products', 'categories'] : []) {
   const base = path.join(renders, group);
   if (!(await exists(base))) continue;
   const entries = await fs.readdir(base, { withFileTypes: true });
