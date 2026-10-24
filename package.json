@@ -1,41 +1,43 @@
 {
-  "name": "jigar-matka-house",
+  "name": "jigar-pot-shop",
   "version": "1.0.0",
   "private": true,
-  "description": "Jigar Matka House — e-commerce platform for handcrafted clay pottery (storefront, admin, API).",
+  "description": "Jigar Matka House storefront and admin panel (Next.js App Router).",
   "license": "UNLICENSED",
-  "workspaces": [
-    "packages/*",
-    "apps/*"
-  ],
+  "type": "module",
   "engines": {
     "node": ">=22.12"
   },
   "scripts": {
-    "dev": "concurrently -n api,worker,web -c yellow,magenta,cyan \"npm run dev -w @jmh/api\" \"npm run dev:worker -w @jmh/api\" \"npm run dev -w @jmh/web\"",
-    "dev:db": "bash scripts/dev-services.sh start",
-    "dev:db:stop": "bash scripts/dev-services.sh stop",
-    "build": "npm run build -w @jmh/api && npm run build -w @jmh/web",
-    "typecheck": "npm run typecheck --workspaces --if-present",
-    "lint": "npm run lint --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present",
-    "test:e2e": "npm run test:e2e -w @jmh/web",
+    "dev": "next dev --port 3000",
+    "build": "NODE_ENV=production next build",
+    "start": "next start --port 3000",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint .",
+    "test:e2e": "playwright test",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "db:migrate": "npm run db:migrate -w @jmh/api",
-    "admin:bootstrap": "npm run admin:bootstrap -w @jmh/api",
-    "seed:demo": "npm run seed:demo -w @jmh/api",
-    "check": "npm run typecheck && npm run lint && npm run test"
+    "check": "npm run typecheck && npm run lint"
+  },
+  "dependencies": {
+    "motion": "^14.5.0",
+    "next": "16.4.2",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "react-easy-crop": "^6.2.4",
+    "server-only": "^0.0.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.5",
+    "@playwright/test": "^1.64.1",
+    "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^24.0.0",
-    "concurrently": "^9.2.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.2.0",
     "eslint": "^9.39.5",
-    "globals": "^16.4.0",
+    "eslint-config-next": "16.4.2",
     "prettier": "^3.6.0",
-    "typescript": "~6.0.3",
-    "typescript-eslint": "^8.72.0",
-    "vitest": "^5.0.5"
+    "tailwindcss": "^4.3.3",
+    "typescript": "~6.0.3"
   }
 }

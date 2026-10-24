@@ -3,7 +3,6 @@ node_modules/
 .pnp.*
 
 # builds
-dist/
 .next/
 out/
 *.tsbuildinfo
@@ -17,17 +16,12 @@ next-env.d.ts
 
 # local data
 .data/
-/storage/
-apps/api/storage/
-apps/api/.tmp/
 
 # test output
 coverage/
 playwright-report/
 test-results/
 blob-report/
-loadtest/results/*.json
-!loadtest/results/.gitkeep
 
 # logs / OS / editor
 *.log

@@ -1,20 +1,21 @@
-# Jigar Matka House — e-commerce platform
+# Jigar Matka House — storefront & admin
 
-Storefront, admin panel and API for **Jigar Matka House**, a shop for clay matkas, earthen water
-pots, terracotta cookware, planters, festive pottery and other household products.
+Next.js storefront and admin panel for **Jigar Matka House**, a shop for clay matkas, earthen
+water pots, terracotta cookware, planters, festive pottery and other household products.
 
-| Part                                | Tech                                                            | Path                           |
-| ----------------------------------- | --------------------------------------------------------------- | ------------------------------ |
-| Storefront + admin UI               | Next.js 16 (App Router, RSC), React 19, Tailwind CSS 4, Motion  | `apps/web`                     |
-| REST API + background worker        | Node.js, Express 5, TypeScript, Mongoose 9, Sharp, BullMQ       | `apps/api`                     |
-| Shared contracts and business rules | TypeScript + Zod (pricing, permissions, order states, WhatsApp) | `packages/shared`              |
-| Infrastructure                      | Docker, docker compose, nginx                                   | `infra/`, `docker-compose.yml` |
-| Load tests                          | k6                                                              | `loadtest/`                    |
-| Demo renders                        | Zero-dependency pottery renderer                                | `tools/pottery-renderer/`      |
+The REST API (Express, MongoDB, image pipeline) lives in a separate repository,
+[`jigar-pot-shop-backend`](https://github.com/DabhiAniket/jigar-pot-shop-backend).
 
-Documentation: [architecture](docs/ARCHITECTURE.md) · [API](docs/API.md) · [security](docs/SECURITY.md) ·
-[media pipeline](docs/MEDIA-PIPELINE.md) · [deployment & operations](docs/DEPLOYMENT.md) ·
-[load testing](docs/LOAD-TESTING.md)
+| Part                               | Tech                                                           | Path                              |
+| ---------------------------------- | -------------------------------------------------------------- | --------------------------------- |
+| Storefront + admin UI              | Next.js 16 (App Router, RSC), React 19, Tailwind CSS 4, Motion | `app/`, `components/`, `lib/`     |
+| Backend URL + request forwarding   | One config module and the Next.js proxy                        | `lib/api/base-url.ts`, `proxy.ts` |
+| Shared contracts (copy)            | TypeScript + Zod, exported from the backend                    | `shared/` (alias `@jmh/shared`)   |
+| End-to-end tests                   | Playwright                                                     | `e2e/`                            |
+| Brand/story asset builds, renderer | Node scripts, zero-dependency pottery renderer                 | `scripts/`, `tools/`, `assets/`   |
+
+Documentation: [architecture](docs/ARCHITECTURE.md) · [security](docs/SECURITY.md) ·
+[deployment](docs/DEPLOYMENT.md)
 
 ## What it does
 
@@ -22,67 +23,56 @@ Documentation: [architecture](docs/ARCHITECTURE.md) · [API](docs/API.md) · [se
   reveal, close-ups, category transitions), catalogue with search/filter/sort/pagination,
   product pages with variants, cart, checkout, order confirmation, order tracking, policies,
   SEO (metadata, canonical URLs, sitemap, robots, Product/Breadcrumb/Store JSON-LD).
-- **Checkout** — the server re-prices every line from the database, applies at most one promotion,
-  reserves stock in a MongoDB transaction (never oversells), supports Idempotency-Key retries,
-  and builds the official `wa.me` link from the **saved** order. Opening WhatsApp never confirms
-  an order; staff move orders through explicit statuses.
-- **Admin** (`/admin`) — dashboard, products (crop/upload/WebP pipeline, variants, bulk actions,
-  duplicate, archive), categories, image library, orders (status history, notes, cancellation
-  with restock, WhatsApp contact, print), customers, inventory with movement log, promotions,
-  homepage content, store settings, admin users & roles, audit log, account & sessions.
-- **Security** — Argon2id passwords, hashed server-side sessions, CSRF tokens + origin checks,
-  role-based permissions enforced by the API, rate limits, Helmet/CSP, audit trail.
+- **Checkout** — the backend re-prices every line, reserves stock and builds the official
+  `wa.me` link from the **saved** order; this app only displays server quotes.
+- **Admin** (`/admin`) — dashboard, products (crop/upload/WebP pipeline), categories, image
+  library, orders, customers, inventory, promotions, homepage content, store settings, admin
+  users & roles, audit log, account & sessions. The API enforces every permission.
+
+## How it talks to the backend
+
+`NEXT_PUBLIC_API_BASE_URL` is the backend's URL. Only `lib/api/base-url.ts` reads it.
+
+- Server-side rendering fetches the backend directly through that module (`lib/api/server.ts`).
+- The browser never calls the backend's domain. It requests same-origin `/api/v1/*` and
+  `/media/*`, and `proxy.ts` forwards them. So the admin session cookie stays first-party on
+  this domain, which server-rendered admin pages rely on, and no CORS or third-party cookies are
+  involved.
+- With `INTERNAL_API_TOKEN` set (same value as the backend), forwarded requests carry the
+  visitor's address, so the backend rate-limits each visitor separately.
 
 ## Quick start (development)
 
-Requirements: Node.js 22.12+ (24 recommended), MongoDB 7+ **as a replica set** (transactions),
-optionally Docker for Redis.
+Requirements: Node.js 22.12+ (24 recommended) and a running backend (see its README).
 
 ```bash
 npm install
-npm run dev:db                     # local MongoDB replica set on :27018 (+ Redis on :6380 if Docker is available)
-cp apps/api/.env.example apps/api/.env          # set APP_SECRET; MONGODB_URI may point at Atlas
-cp apps/web/.env.example apps/web/.env.local    # REVALIDATE_SECRET must match the API's
-npm run admin:bootstrap            # needs BOOTSTRAP_ADMIN_EMAIL / BOOTSTRAP_ADMIN_PASSWORD in apps/api/.env
-npm run seed:demo                  # optional: illustrative demo catalogue (refuses to run in production)
-npm run dev                        # API :4000, worker (when REDIS_URL is set), web :3000
+cp .env.example .env.local    # NEXT_PUBLIC_API_BASE_URL=http://localhost:4000; REVALIDATE_SECRET must match the backend's
+npm run dev                   # http://localhost:3000 and http://localhost:3000/admin
 ```
-
-Open <http://localhost:3000> and <http://localhost:3000/admin>. The first sign-in forces a
-password change; then remove `BOOTSTRAP_ADMIN_PASSWORD` from the env file.
-
-Set the shop's real details (WhatsApp number, phone, address, hours, delivery charges, policies)
-in **Admin → Store settings**. Nothing is invented: the footer, structured data and checkout show
-only what is configured, and delivery stays disabled (pickup only) until charges are set.
-
-### Demo content
-
-`npm run seed:demo` loads **sample** products, prices and stock with procedurally rendered
-images (`tools/pottery-renderer`). They are placeholders, not photographs of real stock. Replace
-them with real products and photos through the admin panel; `npm run seed:demo -- --reset-catalog`
-removes only the demo products and categories.
 
 ## Quality gates
 
 ```bash
-npm run typecheck        # all workspaces
+npm run typecheck
 npm run lint
-npm test                 # shared unit tests + API integration tests (in-memory MongoDB replica set)
-npm run build            # API bundle + Next.js production build
-# End-to-end (isolated database jmh_e2e; never the dev/prod DB):
-scripts/e2e-stack.sh prepare && scripts/e2e-stack.sh api &   # API :4100
-scripts/e2e-stack.sh web &                                    # production build on :3100
+npm run build
+# End-to-end, against an isolated backend (database jmh_e2e, never the dev/prod database):
+#   in jigar-pot-shop-backend: scripts/e2e-stack.sh prepare && scripts/e2e-stack.sh api   (API :4100)
+scripts/e2e-web.sh &                                   # production build on :3100
 E2E_BASE_URL=http://localhost:3100 npm run test:e2e
 ```
 
-## Repository layout
+## Shared contracts
 
-```
-apps/api       Express API (src/modules/*), worker, migrations, scripts, integration tests, seed
-apps/web       Next.js app: app/(store) storefront, app/admin admin panel, components, e2e tests
-packages/shared  Zod schemas, DTO types, pricing engine, order state machine, RBAC, WhatsApp
-infra          Dockerfiles and nginx edge config
-loadtest       k6 scenarios and results
-scripts        dev services, E2E stack, brand/story asset builds
-tools          pottery renderer (demo imagery)
-```
+`shared/` is a copy of the backend's `shared/src` (Zod schemas, DTO types, labels, display
+helpers). Don't edit it here. Change it in the backend, then run
+`npm run shared:export -- ../jigar-pot-shop` there. `shared/VERSION` records the exported content hash.
+
+## Deployment
+
+- **Vercel**: import this repository as a Next.js project, with the repository root as the root
+  directory.
+- **Containers**: `docker build --build-arg NEXT_PUBLIC_API_BASE_URL=… -t jmh-web .`
+
+Environment variables and rollout order are in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
