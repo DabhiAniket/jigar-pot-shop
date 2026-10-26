@@ -59,12 +59,15 @@ export function ImageUploadDialog({
   onUploaded,
   defaultAlt = '',
   source,
+  replaceId,
 }: {
   open: boolean;
   onClose: () => void;
   onUploaded: (asset: MediaAssetDTO) => void;
   defaultAlt?: string;
   source?: EditSource;
+  /** Upload a new picture for this existing image: its record, and every use of it, is kept. */
+  replaceId?: string;
 }) {
   const [step, setStep] = useState<Step>('select');
   const [file, setFile] = useState<File | null>(null);
@@ -108,6 +111,7 @@ export function ImageUploadDialog({
     [objectUrl],
   );
 
+  const uploadPath = replaceId ? `/admin/media/${replaceId}/replace` : '/admin/media';
   const sourceId = source?.id;
   const sourceUrl = source?.url;
   const sourceAlt = source?.alt;
@@ -198,18 +202,14 @@ export function ImageUploadDialog({
         form.append('alt', alt.trim().slice(0, 200));
         form.append('crop', JSON.stringify(cropArea));
         form.append('file', file!);
-        const request = uploadWithProgress<{ data: MediaAssetDTO }>(
-          '/admin/media',
-          form,
-          setProgress,
-        );
+        const request = uploadWithProgress<{ data: MediaAssetDTO }>(uploadPath, form, setProgress);
         abortRef.current = request.abort;
         created = await request.promise;
       } else {
         const controller = new AbortController();
         abortRef.current = () => controller.abort();
         const blobPathname = await uploadToBlob(file!, setProgress, controller.signal);
-        created = await api<{ data: MediaAssetDTO }>('/admin/media', {
+        created = await api<{ data: MediaAssetDTO }>(uploadPath, {
           body: {
             blobPathname,
             originalName: file!.name,
@@ -266,11 +266,13 @@ export function ImageUploadDialog({
       onClose={close}
       busy={busy}
       size="xl"
-      title={source ? 'Edit image' : 'Upload image'}
+      title={source ? 'Edit image' : replaceId ? 'Replace image' : 'Upload image'}
       description={
         source
-          ? 'Crop, zoom or rotate the stored image. It is saved as a new image; the current one is kept.'
-          : 'Crop and preview, then the image is converted to optimised WebP sizes automatically.'
+          ? 'Crop, zoom or rotate the stored image. Nothing changes until you save; then every place that uses it shows the new crop.'
+          : replaceId
+            ? 'Choose a new picture, crop it and check the preview. Nothing changes until you save; then every place that uses this image shows the new one.'
+            : 'Crop and preview, then the image is converted to optimised WebP sizes automatically.'
       }
       footer={
         step === 'crop' ? (
@@ -294,7 +296,11 @@ export function ImageUploadDialog({
                 ? `Uploading ${Math.round(progress * 100)}%`
                 : step === 'processing'
                   ? 'Processing…'
-                  : 'Upload & process'}
+                  : source
+                    ? 'Save changes'
+                    : replaceId
+                      ? 'Replace image'
+                      : 'Upload & process'}
             </Button>
           </>
         ) : null

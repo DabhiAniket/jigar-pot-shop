@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
 // Credentials of the isolated E2E database only (see scripts/e2e-web.sh).
 const EMAIL = 'e2e.owner@example.com';
@@ -94,7 +94,7 @@ test.describe('admin', () => {
       (img: HTMLImageElement) => img.naturalWidth / img.naturalHeight,
     );
     expect(previewRatio).toBeCloseTo(0.8, 1);
-    await page.getByRole('button', { name: 'Upload & process' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Save changes' }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0, { timeout: 60_000 });
 
     // The edited copy replaced the image in the form; the saved file has the previewed shape.
@@ -165,5 +165,125 @@ test.describe('admin', () => {
     await shopper.reload();
     await expect(shopper.getByText('Cancelled at your request')).toBeVisible();
     await customer.close();
+  });
+
+  /** Places a delivery order as a brand-new customer, through the public API (like the browser). */
+  async function placeOrderAs(
+    request: APIRequestContext,
+    baseURL: string,
+  ): Promise<{ orderNumber: string; csrf: string }> {
+    const headers = { Origin: new URL(baseURL).origin };
+    const email = `inline.${Date.now()}@example.com`;
+    const registered = await request.post('/api/v1/account/register', {
+      headers,
+      data: { name: 'Inline Tester', email, phone: '9825055555', password: 'Terracotta-Kiln-48' },
+    });
+    expect(registered.status()).toBe(201);
+    const csrf = (await registered.json()).data.csrfToken as string;
+    const products = await (await request.get('/api/v1/products?limit=1')).json();
+    const order = await request.post('/api/v1/orders', {
+      headers: {
+        ...headers,
+        'x-csrf-token': csrf,
+        'idempotency-key': `inline-${Date.now()}-abcdefgh`,
+      },
+      data: {
+        items: [{ productId: products.data[0].id, quantity: 1 }],
+        fulfillment: 'delivery',
+        channel: 'website',
+        customer: { name: 'Inline Tester', phone: '9825055555' },
+        address: {
+          line1: '1 Test Road',
+          city: 'Rajkot',
+          state: 'Gujarat',
+          pincode: '360001',
+        },
+      },
+    });
+    expect(order.status()).toBe(201);
+    return { orderNumber: (await order.json()).data.order.orderNumber, csrf };
+  }
+
+  test('update an order from its row in the list, including shipping details', async ({
+    page,
+    request,
+    baseURL,
+  }) => {
+    const { orderNumber } = await placeOrderAs(request, baseURL!);
+    await signIn(page, FINAL);
+    await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+    await page.goto(`/admin/orders?q=${orderNumber}`);
+    const row = page.getByRole('row').filter({ hasText: orderNumber });
+    const statusCell = row.getByRole('cell').nth(3);
+    await expect(statusCell).toContainText('Pending');
+
+    const dialog = page.getByRole('dialog');
+    const move = async (label: string) => {
+      await dialog.getByText(label, { exact: true }).click();
+      await dialog.getByRole('button', { name: 'Update status' }).click();
+    };
+    await row.getByRole('button', { name: `Update order ${orderNumber}` }).click();
+    await move('Confirmed');
+    await expect(page.getByText('Order marked confirmed')).toBeVisible();
+    await move('Processing');
+    await expect(page.getByText('Order marked processing')).toBeVisible();
+    await move('Ready for dispatch / pickup');
+    await expect(page.getByText('Order marked ready for dispatch / pickup')).toBeVisible();
+
+    // Shipping details are required before Shipped: the empty form cannot be submitted.
+    await dialog.getByText('Shipped', { exact: true }).click();
+    await dialog.getByRole('button', { name: 'Update status' }).click();
+    const provider = dialog.getByLabel(/Shipping provider/).first();
+    expect(await provider.evaluate((input: HTMLInputElement) => input.checkValidity())).toBe(false);
+    await expect(statusCell).not.toContainText('Shipped');
+    await dialog
+      .getByLabel(/Shipping provider/)
+      .first()
+      .fill('DTDC');
+    await dialog
+      .getByLabel(/Tracking number/)
+      .first()
+      .fill('D1234567');
+    await dialog.getByRole('button', { name: 'Update status' }).click();
+    await expect(page.getByText('Order marked shipped')).toBeVisible();
+    await page.keyboard.press('Escape');
+
+    // The list behind the dialog shows the new status without leaving the page.
+    await expect(statusCell).toContainText('Shipped');
+  });
+
+  test('replace an image in the library and see it everywhere it is used', async ({ page }) => {
+    await signIn(page, FINAL);
+    await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+    await page.goto('/admin/media');
+    const tile = page.getByRole('listitem').first();
+    const before = await tile.locator('img').getAttribute('src');
+    await tile.getByRole('button').click();
+    await page.getByRole('button', { name: 'Replace image' }).click();
+    await page.locator('input[type=file]').setInputFiles(IMAGE);
+    await expect(page.getByLabel('Crop area. Use the arrow keys to move the image.')).toBeVisible();
+    await page.getByRole('button', { name: 'Preview' }).click();
+    await expect(page.getByAltText('Preview of the cropped image')).toBeVisible();
+    await page.getByRole('button', { name: 'Replace image' }).click();
+    await expect(page.getByText(/Image replaced/)).toBeVisible({ timeout: 60_000 });
+
+    await page.goto('/admin/media');
+    const after = await page.getByRole('listitem').first().locator('img').getAttribute('src');
+    expect(after).not.toBe(before);
+    const revision = after!.match(/\/r(\d+)\//)![1];
+    // The product that uses this image now serves the new revision (storefront cache refreshes).
+    await expect
+      .poll(
+        async () => {
+          await page.goto('/products/e2e-glazed-pot');
+          return page
+            .getByRole('main')
+            .locator('img')
+            .first()
+            .evaluate((img: HTMLImageElement) => img.currentSrc);
+        },
+        { timeout: 30_000 },
+      )
+      .toContain(`/r${revision}/`);
   });
 });
