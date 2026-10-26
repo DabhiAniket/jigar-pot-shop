@@ -148,6 +148,17 @@ test.describe('storefront', () => {
     );
     await other.goto(`/account/orders/${orderNumber}`);
     await expect(other.getByRole('heading', { name: 'Order not found' })).toBeVisible();
+
+    // Claiming needs the phone it was placed with; the right one adds it to that account.
+    await other.goto('/account/orders');
+    await other.getByRole('button', { name: 'Add it to your account' }).click();
+    await other.getByLabel('Order number').fill(orderNumber);
+    await other.getByLabel('Mobile number').fill('98250 00000');
+    await other.getByRole('button', { name: 'Add order' }).click();
+    await expect(other.getByText(/could not find an unclaimed order/)).toBeVisible();
+    await other.getByLabel('Mobile number').fill('98250 66666');
+    await other.getByRole('button', { name: 'Add order' }).click();
+    await expect(other.getByRole('link', { name: new RegExp(orderNumber) })).toBeVisible();
     await stranger.close();
   });
 
