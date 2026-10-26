@@ -10,7 +10,7 @@ import {
   type OrderStatus,
 } from '@jmh/shared';
 import { Button, ButtonLink } from '@/components/ui/button';
-import { Select } from '@/components/ui/form';
+import { Field, FormError, Input, Select } from '@/components/ui/form';
 import { Badge, EmptyState, Skeleton } from '@/components/ui/misc';
 import { api, ClientApiError } from '@/lib/api/client';
 import { formatDate } from '@/lib/utils';
@@ -42,6 +42,7 @@ export function OrdersList() {
   const [orders, setOrders] = useState<CustomerOrderListItem[] | null>(null);
   const [meta, setMeta] = useState<Meta | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     if (!customer) return;
@@ -62,7 +63,7 @@ export function OrdersList() {
     return () => {
       active = false;
     };
-  }, [customer, page, status]);
+  }, [customer, page, status, reload]);
 
   if (!customer || (orders === null && !error)) return <Skeleton className="h-64" />;
 
@@ -141,6 +142,14 @@ export function OrdersList() {
           </li>
         ))}
       </ul>
+      <ClaimOrder
+        onClaimed={() => {
+          setOrders(null);
+          setStatus('');
+          setPage(1);
+          setReload((value) => value + 1);
+        }}
+      />
       {meta && meta.totalPages > 1 ? (
         <nav className="mt-6 flex items-center justify-between" aria-label="Order pages">
           <Button
@@ -171,5 +180,88 @@ export function OrdersList() {
         </nav>
       ) : null}
     </div>
+  );
+}
+
+/** Orders placed before signing in can be added with the number and phone they were placed with. */
+function ClaimOrder({ onClaimed }: { onClaimed: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [fields, setFields] = useState<Record<string, string[]>>({});
+  const [done, setDone] = useState<string | null>(null);
+
+  if (!open)
+    return (
+      <p className="mt-8 text-sm text-brown-muted">
+        Placed an order before signing in?{' '}
+        <button
+          type="button"
+          className="font-semibold text-terracotta-deep underline"
+          onClick={() => setOpen(true)}
+        >
+          Add it to your account
+        </button>
+      </p>
+    );
+
+  return (
+    <form
+      className="mt-8 grid gap-4 rounded-2xl border border-brown/15 p-5 sm:grid-cols-[1fr_1fr_auto] sm:items-end"
+      onSubmit={async (event) => {
+        event.preventDefault();
+        const data = new FormData(event.currentTarget);
+        setBusy(true);
+        setError(null);
+        setFields({});
+        setDone(null);
+        try {
+          const response = await api<{ data: CustomerOrderListItem }>('/account/orders/claim', {
+            body: {
+              orderNumber: String(data.get('orderNumber') ?? '').trim(),
+              phone: String(data.get('phone') ?? '').trim(),
+            },
+          });
+          setDone(`Added order ${response.data.orderNumber} to your account.`);
+          onClaimed();
+        } catch (reason) {
+          if (reason instanceof ClientApiError) {
+            setFields(reason.fields);
+            setError(
+              reason.status === 404
+                ? 'We could not find an unclaimed order with that number and phone.'
+                : reason.message,
+            );
+          }
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      <div className="sm:col-span-3">
+        <h2 className="text-lg font-medium">Add an earlier order</h2>
+        <p className="text-sm text-brown-muted">
+          Enter the order number and the mobile number used at checkout. Once added, only your
+          account can see it.
+        </p>
+        <FormError message={error} />
+        {done ? (
+          <p role="status" className="text-sm text-sage">
+            {done}
+          </p>
+        ) : null}
+      </div>
+      <Field label="Order number" required error={fields.orderNumber}>
+        {(props) => (
+          <Input {...props} name="orderNumber" placeholder="JMH-261022-XXXXX" maxLength={20} />
+        )}
+      </Field>
+      <Field label="Mobile number" required error={fields.phone}>
+        {(props) => <Input {...props} name="phone" type="tel" inputMode="tel" maxLength={16} />}
+      </Field>
+      <Button type="submit" loading={busy} className="h-11">
+        Add order
+      </Button>
+    </form>
   );
 }
