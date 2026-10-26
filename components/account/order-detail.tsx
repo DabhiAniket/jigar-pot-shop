@@ -75,19 +75,29 @@ export function OrderDetail({ orderNumber }: { orderNumber: string }) {
   useEffect(() => {
     if (!customer) return;
     let active = true;
-    api<{ data: CustomerOrderDTO }>(`/account/orders/${encodeURIComponent(orderNumber)}`)
-      .then((response) => active && setOrder(response.data))
-      .catch((reason) => {
-        if (!active) return;
-        if (reason instanceof ClientApiError && reason.status === 404) setNotFound(true);
-        else
-          setError(
-            reason instanceof ClientApiError ? reason.message : 'Could not load this order.',
-          );
-      });
+    const load = () =>
+      api<{ data: CustomerOrderDTO }>(`/account/orders/${encodeURIComponent(orderNumber)}`)
+        .then((response) => active && setOrder(response.data))
+        .catch((reason) => {
+          if (!active) return;
+          if (reason instanceof ClientApiError && reason.status === 404) setNotFound(true);
+          else if (!order)
+            setError(
+              reason instanceof ClientApiError ? reason.message : 'Could not load this order.',
+            );
+        });
+    void load();
+    // Status changes made by the store show up without a manual reload.
+    const refresh = () => document.visibilityState === 'visible' && void load();
+    const timer = setInterval(refresh, 30_000);
+    document.addEventListener('visibilitychange', refresh);
     return () => {
       active = false;
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', refresh);
     };
+    // `order` is read only to avoid replacing a loaded page with an error on a failed refresh.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customer, orderNumber]);
 
   if (notFound)

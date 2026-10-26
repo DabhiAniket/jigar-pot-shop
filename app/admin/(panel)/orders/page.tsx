@@ -15,6 +15,7 @@ import {
   PageHeader,
   TableWrap,
 } from '@/components/admin/ui';
+import { OrderRowAction } from '@/components/admin/order-row-action';
 import { EmptyState, Pagination } from '@/components/ui/misc';
 import { adminGet } from '@/lib/api/server';
 import { formatDateTime, param, toQuery } from '@/lib/utils';
@@ -106,6 +107,9 @@ export default async function OrdersPage({
               <th>Status</th>
               <th className="text-right">Items</th>
               <th className="text-right">Total</th>
+              <th>
+                <span className="sr-only">Actions</span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -139,6 +143,9 @@ export default async function OrdersPage({
                 </td>
                 <td className="text-right">{order.itemCount}</td>
                 <td className="text-right font-semibold">{formatINR(order.total)}</td>
+                <td className="text-right">
+                  <OrderRowAction order={order} />
+                </td>
               </tr>
             ))}
           </tbody>

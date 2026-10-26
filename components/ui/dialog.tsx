@@ -53,7 +53,7 @@ export function Dialog({
         if (event.target === ref.current && !busy) onClose();
       }}
       className={cn(
-        'm-auto w-[calc(100%-2rem)] rounded-3xl bg-cream p-0 text-brown shadow-lift backdrop:bg-brown-deep/55 backdrop:backdrop-blur-[2px]',
+        'm-auto w-[calc(100%-2rem)] rounded-3xl bg-cream p-0 text-left text-brown shadow-lift backdrop:bg-brown-deep/55 backdrop:backdrop-blur-[2px]',
         SIZES[size],
       )}
     >

@@ -9,7 +9,17 @@ import { Field, FormError, Input, Textarea } from '@/components/ui/form';
 import { useAdmin, useMutation } from './admin-context';
 import { Card } from './ui';
 
-export function OrderActions({ order }: { order: AdminOrderDetail }) {
+export function OrderActions({
+  order,
+  compact = false,
+  onUpdated,
+}: {
+  order: AdminOrderDetail;
+  /** Dialog use: only the controls that change the order, not print/WhatsApp or notes. */
+  compact?: boolean;
+  /** Called with the saved order after any successful change. */
+  onUpdated?: (order: AdminOrderDetail) => void;
+}) {
   const { can } = useAdmin();
   const status = useMutation();
   const note = useMutation();
@@ -53,28 +63,31 @@ export function OrderActions({ order }: { order: AdminOrderDetail }) {
       setStatusNote('');
       setReason('');
       setConfirmCancel(false);
+      onUpdated?.((result as { data: AdminOrderDetail }).data);
     }
   };
 
   return (
     <div className="no-print space-y-6">
-      <Card title="Actions">
-        <div className="space-y-3">
-          {order.whatsappContactUrl ? (
-            <a
-              href={order.whatsappContactUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={buttonClasses('whatsapp', 'md', 'w-full')}
-            >
-              <WhatsAppIcon className="size-5" /> Message customer on WhatsApp
-            </a>
-          ) : null}
-          <Button variant="secondary" className="w-full" onClick={() => window.print()}>
-            Print order summary
-          </Button>
-        </div>
-      </Card>
+      {compact ? null : (
+        <Card title="Actions">
+          <div className="space-y-3">
+            {order.whatsappContactUrl ? (
+              <a
+                href={order.whatsappContactUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={buttonClasses('whatsapp', 'md', 'w-full')}
+              >
+                <WhatsAppIcon className="size-5" /> Message customer on WhatsApp
+              </a>
+            ) : null}
+            <Button variant="secondary" className="w-full" onClick={() => window.print()}>
+              Print order summary
+            </Button>
+          </div>
+        </Card>
+      )}
 
       {writable && order.allowedTransitions.length ? (
         <Card title="Update status">
@@ -206,11 +219,14 @@ export function OrderActions({ order }: { order: AdminOrderDetail }) {
               loading={reject.busy}
               disabled={!rejectNote.trim()}
               onClick={async () => {
-                const result = await reject.run(`/orders/${order.id}/cancellation-request/reject`, {
-                  body: { note: rejectNote },
-                  success: 'Cancellation request rejected',
-                });
-                if (result) setRejectNote('');
+                const result = await reject.run<{ data: AdminOrderDetail }>(
+                  `/orders/${order.id}/cancellation-request/reject`,
+                  { body: { note: rejectNote }, success: 'Cancellation request rejected' },
+                );
+                if (result) {
+                  setRejectNote('');
+                  onUpdated?.(result.data);
+                }
               }}
             >
               Reject request
@@ -225,11 +241,11 @@ export function OrderActions({ order }: { order: AdminOrderDetail }) {
             className="space-y-3"
             onSubmit={async (event) => {
               event.preventDefault();
-              await shipmentMutation.run(`/orders/${order.id}/shipment`, {
-                method: 'PUT',
-                body: shipmentBody(),
-                success: 'Shipment details saved',
-              });
+              const saved = await shipmentMutation.run<{ data: AdminOrderDetail }>(
+                `/orders/${order.id}/shipment`,
+                { method: 'PUT', body: shipmentBody(), success: 'Shipment details saved' },
+              );
+              if (saved) onUpdated?.(saved.data);
             }}
           >
             <FormError message={shipmentMutation.error} />
@@ -245,7 +261,7 @@ export function OrderActions({ order }: { order: AdminOrderDetail }) {
         </Card>
       ) : null}
 
-      {writable ? (
+      {writable && !compact ? (
         <Card title="Internal notes">
           <ul className="mb-4 space-y-3 text-sm">
             {order.internalNotes.length ? (

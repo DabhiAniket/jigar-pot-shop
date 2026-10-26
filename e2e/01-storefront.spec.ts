@@ -145,4 +145,17 @@ test.describe('storefront', () => {
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog', { name: 'Menu' })).toBeHidden();
   });
+
+  test('account pages fit a phone screen @mobile', async ({ page }) => {
+    await register(page, 'Mobile Shopper', `mobile.${Date.now()}@example.com`, '98250 77777');
+    for (const path of ['/account', '/account/orders', '/checkout']) {
+      await page.goto(path);
+      await page.waitForLoadState('networkidle');
+      const overflow = await page.evaluate(
+        () => document.documentElement.scrollWidth - window.innerWidth,
+      );
+      expect(overflow, path).toBeLessThanOrEqual(0);
+    }
+    await expect(page.getByRole('heading', { name: 'Nothing to check out yet' })).toBeVisible();
+  });
 });

@@ -7,6 +7,7 @@ import { ConfirmDialog, Dialog } from '@/components/ui/dialog';
 import { Checkbox, Field, FormError, Input, Textarea } from '@/components/ui/form';
 import { Badge, EmptyState } from '@/components/ui/misc';
 import { useAdmin, useMutation } from './admin-context';
+import { ImageUploadDialog } from './image-uploader';
 import { MediaPicker } from './media-picker';
 import { TableWrap } from './ui';
 
@@ -45,6 +46,7 @@ export function CategoryManager({ categories }: { categories: AdminCategory[] })
   const reorder = useMutation();
   const [draft, setDraft] = useState<Draft | null>(null);
   const [picker, setPicker] = useState(false);
+  const [cropping, setCropping] = useState(false);
   const [deleting, setDeleting] = useState<AdminCategory | null>(null);
   const writable = can('categories:write');
 
@@ -296,6 +298,11 @@ export function CategoryManager({ categories }: { categories: AdminCategory[] })
                   {draft.image ? 'Change image' : 'Choose image'}
                 </Button>
                 {draft.image ? (
+                  <Button size="sm" variant="secondary" onClick={() => setCropping(true)}>
+                    Edit crop
+                  </Button>
+                ) : null}
+                {draft.image ? (
                   <button
                     type="button"
                     className="text-sm font-semibold text-danger"
@@ -342,6 +349,37 @@ export function CategoryManager({ categories }: { categories: AdminCategory[] })
           </form>
         ) : null}
       </Dialog>
+
+      <ImageUploadDialog
+        open={cropping && Boolean(draft?.image)}
+        onClose={() => setCropping(false)}
+        source={
+          draft?.image
+            ? {
+                id: draft.image.assetId,
+                alt: draft.image.alt,
+                url: draft.image.variants.at(-1)!.url,
+              }
+            : undefined
+        }
+        onUploaded={(asset) => {
+          // Same image record, new crop: it is already updated everywhere it is used.
+          set('image', {
+            assetId: asset.id,
+            alt: asset.alt,
+            width: asset.width ?? 0,
+            height: asset.height ?? 0,
+            placeholder: asset.placeholder,
+            variants: asset.variants.map(({ name, url, width, height }) => ({
+              name,
+              url,
+              width,
+              height,
+            })),
+          });
+          setCropping(false);
+        }}
+      />
 
       <MediaPicker
         open={picker}

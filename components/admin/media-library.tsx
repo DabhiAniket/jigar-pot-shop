@@ -39,6 +39,7 @@ export function MediaLibrary({ assets }: { assets: MediaAssetDTO[] }) {
   const [alt, setAlt] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [replacing, setReplacing] = useState(false);
   const writable = can('media:write');
 
   useEffect(() => {
@@ -132,15 +133,28 @@ export function MediaLibrary({ assets }: { assets: MediaAssetDTO[] }) {
             : undefined
         }
         onUploaded={() => {
-          toast('Saved as a new image. The original is kept.');
+          toast('Crop saved. Every place that uses this image now shows it.');
           setEditing(false);
           close();
           router.refresh();
         }}
       />
 
+      <ImageUploadDialog
+        open={replacing && Boolean(detail)}
+        onClose={() => setReplacing(false)}
+        replaceId={detail?.id}
+        defaultAlt={detail?.alt}
+        onUploaded={() => {
+          toast('Image replaced. Every place that uses it now shows the new picture.');
+          setReplacing(false);
+          close();
+          router.refresh();
+        }}
+      />
+
       <Dialog
-        open={Boolean(selectedId) && !confirmDelete && !editing}
+        open={Boolean(selectedId) && !confirmDelete && !editing && !replacing}
         onClose={close}
         size="lg"
         busy={save.busy}
@@ -152,9 +166,14 @@ export function MediaLibrary({ assets }: { assets: MediaAssetDTO[] }) {
                 Delete
               </Button>
               {detail.status === 'ready' && detail.variants.length ? (
-                <Button variant="secondary" onClick={() => setEditing(true)}>
-                  Edit crop
-                </Button>
+                <>
+                  <Button variant="secondary" onClick={() => setReplacing(true)}>
+                    Replace image
+                  </Button>
+                  <Button variant="secondary" onClick={() => setEditing(true)}>
+                    Edit crop
+                  </Button>
+                </>
               ) : null}
               <Button
                 loading={save.busy}
