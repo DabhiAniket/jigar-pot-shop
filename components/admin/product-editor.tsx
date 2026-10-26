@@ -101,6 +101,7 @@ export function ProductEditor({
   const [seoDescription, setSeoDescription] = useState(product?.seo.description ?? '');
   const [picker, setPicker] = useState(false);
   const [editIndex, setEditIndex] = useState<number | null>(null);
+  const [swapIndex, setSwapIndex] = useState<number | null>(null);
 
   const err = (path: string) => fieldErrors[path];
   const variantErr = (index: number) =>
@@ -354,6 +355,15 @@ export function ProductEditor({
                         </button>
                         <button type="button" onClick={() => setEditIndex(index)}>
                           Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSwapIndex(index);
+                            setPicker(true);
+                          }}
+                        >
+                          Replace
                         </button>
                         <button
                           type="button"
@@ -718,29 +728,34 @@ export function ProductEditor({
       />
       <MediaPicker
         open={picker}
-        onClose={() => setPicker(false)}
-        onPick={(asset) =>
+        onClose={() => {
+          setPicker(false);
+          setSwapIndex(null);
+        }}
+        onPick={(asset) => {
+          const picked = {
+            assetId: asset.id,
+            alt: asset.alt,
+            width: asset.width ?? 0,
+            height: asset.height ?? 0,
+            placeholder: asset.placeholder,
+            variants: asset.variants.map(({ name, url, width, height }) => ({
+              name,
+              url,
+              width,
+              height,
+            })),
+          };
+          // Replace swaps just this product's slot; other products using the old image are unchanged.
           setImages((current) =>
-            current.some((image) => image.assetId === asset.id)
-              ? current
-              : [
-                  ...current,
-                  {
-                    assetId: asset.id,
-                    alt: asset.alt,
-                    width: asset.width ?? 0,
-                    height: asset.height ?? 0,
-                    placeholder: asset.placeholder,
-                    variants: asset.variants.map(({ name, url, width, height }) => ({
-                      name,
-                      url,
-                      width,
-                      height,
-                    })),
-                  },
-                ],
-          )
-        }
+            swapIndex !== null
+              ? current.map((image, i) => (i === swapIndex ? picked : image))
+              : current.some((image) => image.assetId === asset.id)
+                ? current
+                : [...current, picked],
+          );
+          setSwapIndex(null);
+        }}
       />
     </form>
   );
