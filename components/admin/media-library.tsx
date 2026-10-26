@@ -38,6 +38,7 @@ export function MediaLibrary({ assets }: { assets: MediaAssetDTO[] }) {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [alt, setAlt] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [editing, setEditing] = useState(false);
   const writable = can('media:write');
 
   useEffect(() => {
@@ -89,7 +90,7 @@ export function MediaLibrary({ assets }: { assets: MediaAssetDTO[] }) {
                     src={asset.variants[0].url}
                     alt={asset.alt || asset.originalFilename}
                     loading="lazy"
-                    className="aspect-square w-full object-cover"
+                    className="aspect-square w-full bg-cream-deep object-contain"
                   />
                 ) : (
                   <span className="flex aspect-square w-full items-center justify-center bg-cream-deep text-xs text-brown-muted">
@@ -122,8 +123,24 @@ export function MediaLibrary({ assets }: { assets: MediaAssetDTO[] }) {
         }}
       />
 
+      <ImageUploadDialog
+        open={editing && Boolean(detail)}
+        onClose={() => setEditing(false)}
+        source={
+          detail?.variants.length
+            ? { id: detail.id, alt: detail.alt, url: detail.variants.at(-1)!.url }
+            : undefined
+        }
+        onUploaded={() => {
+          toast('Saved as a new image. The original is kept.');
+          setEditing(false);
+          close();
+          router.refresh();
+        }}
+      />
+
       <Dialog
-        open={Boolean(selectedId) && !confirmDelete}
+        open={Boolean(selectedId) && !confirmDelete && !editing}
         onClose={close}
         size="lg"
         busy={save.busy}
@@ -134,6 +151,11 @@ export function MediaLibrary({ assets }: { assets: MediaAssetDTO[] }) {
               <Button variant="danger" onClick={() => setConfirmDelete(true)}>
                 Delete
               </Button>
+              {detail.status === 'ready' && detail.variants.length ? (
+                <Button variant="secondary" onClick={() => setEditing(true)}>
+                  Edit crop
+                </Button>
+              ) : null}
               <Button
                 loading={save.busy}
                 onClick={async () => {

@@ -9,6 +9,7 @@ import { EmptyState, Skeleton } from '@/components/ui/misc';
 import { Field, FormError, Input, Select, Textarea } from '@/components/ui/form';
 import { api, ClientApiError } from '@/lib/api/client';
 import { cart, useCart, useCartReady } from '@/lib/cart';
+import { useCustomer } from '@/lib/customer';
 import { useQuote } from '@/lib/use-quote';
 import { cn } from '@/lib/utils';
 import { FulfillmentPicker } from './cart-view';
@@ -38,6 +39,7 @@ export function CheckoutForm() {
   const state = useCart();
   const ready = useCartReady();
   const { quote } = useQuote(state, ready);
+  const { ready: customerReady, customer } = useCustomer();
   const [channel, setChannel] = useState<CheckoutChannel>(
     search.get('channel') === 'website' ? 'website' : 'whatsapp',
   );
@@ -47,7 +49,7 @@ export function CheckoutForm() {
   const [formError, setFormError] = useState<string | null>(null);
   const submittingRef = useRef(false);
 
-  if (!ready) return <Skeleton className="h-96" />;
+  if (!ready || !customerReady) return <Skeleton className="h-96" />;
   if (state.items.length === 0) {
     return (
       <EmptyState
@@ -58,6 +60,25 @@ export function CheckoutForm() {
       </EmptyState>
     );
   }
+  if (!customer) {
+    return (
+      <EmptyState
+        title="Sign in to place your order"
+        action={
+          <div className="flex flex-wrap justify-center gap-3">
+            <ButtonLink href="/account/login?next=/checkout">Sign in</ButtonLink>
+            <ButtonLink href="/account/register?next=/checkout" variant="secondary">
+              Create account
+            </ButtonLink>
+          </div>
+        }
+      >
+        Orders are saved to your account so only you can view and track them. Your cart is kept.
+      </EmptyState>
+    );
+  }
+  const savedAddress =
+    customer.addresses.find((address) => address.isDefault) ?? customer.addresses[0];
 
   const delivery = state.fulfillment === 'delivery';
   const fieldError = (path: string) => errors[path];
@@ -102,18 +123,23 @@ export function CheckoutForm() {
         body,
         headers: { 'idempotency-key': idempotencyKey() },
       });
-      const { order, accessToken } = response.data;
+      const { order } = response.data;
       try {
         sessionStorage.removeItem(IDEMPOTENCY_STORAGE);
       } catch {
         // ignore
       }
       cart.clear();
-      router.replace(`/order/${order.orderNumber}?token=${encodeURIComponent(accessToken)}`);
+      router.replace(`/account/orders/${order.orderNumber}?placed=1`);
     } catch (error) {
       submittingRef.current = false;
       setSubmitting(false);
       if (error instanceof ClientApiError) {
+        if (error.status === 401) {
+          // The session ended while the form was open; the cart is saved, so sign in and return.
+          router.push('/account/login?next=/checkout');
+          return;
+        }
         setErrors(error.fields);
         // A changed cart is a new checkout attempt and needs a fresh key.
         if (
@@ -164,7 +190,15 @@ export function CheckoutForm() {
             Your details
           </h2>
           <Field label="Full name" required error={fieldError('customer.name')}>
-            {(props) => <Input {...props} name="name" autoComplete="name" maxLength={80} />}
+            {(props) => (
+              <Input
+                {...props}
+                name="name"
+                autoComplete="name"
+                maxLength={80}
+                defaultValue={customer.name}
+              />
+            )}
           </Field>
           <Field
             label="Mobile number"
@@ -181,6 +215,7 @@ export function CheckoutForm() {
                 autoComplete="tel-national"
                 maxLength={16}
                 placeholder="98765 43210"
+                defaultValue={customer.phone}
               />
             )}
           </Field>
@@ -220,20 +255,45 @@ export function CheckoutForm() {
                 className="sm:col-span-2"
               >
                 {(props) => (
-                  <Input {...props} name="line1" autoComplete="address-line1" maxLength={160} />
+                  <Input
+                    {...props}
+                    name="line1"
+                    autoComplete="address-line1"
+                    maxLength={160}
+                    defaultValue={savedAddress?.line1}
+                  />
                 )}
               </Field>
               <Field label="Area / locality" error={fieldError('address.line2')}>
                 {(props) => (
-                  <Input {...props} name="line2" autoComplete="address-line2" maxLength={160} />
+                  <Input
+                    {...props}
+                    name="line2"
+                    autoComplete="address-line2"
+                    maxLength={160}
+                    defaultValue={savedAddress?.line2 ?? ''}
+                  />
                 )}
               </Field>
               <Field label="Landmark" error={fieldError('address.landmark')}>
-                {(props) => <Input {...props} name="landmark" maxLength={120} />}
+                {(props) => (
+                  <Input
+                    {...props}
+                    name="landmark"
+                    maxLength={120}
+                    defaultValue={savedAddress?.landmark ?? ''}
+                  />
+                )}
               </Field>
               <Field label="City" required error={fieldError('address.city')}>
                 {(props) => (
-                  <Input {...props} name="city" autoComplete="address-level2" maxLength={80} />
+                  <Input
+                    {...props}
+                    name="city"
+                    autoComplete="address-level2"
+                    maxLength={80}
+                    defaultValue={savedAddress?.city}
+                  />
                 )}
               </Field>
               <Field label="PIN code" required error={fieldError('address.pincode')}>
@@ -244,6 +304,7 @@ export function CheckoutForm() {
                     inputMode="numeric"
                     autoComplete="postal-code"
                     maxLength={6}
+                    defaultValue={savedAddress?.pincode}
                   />
                 )}
               </Field>
@@ -254,7 +315,12 @@ export function CheckoutForm() {
                 className="sm:col-span-2"
               >
                 {(props) => (
-                  <Select {...props} name="state" defaultValue="" autoComplete="address-level1">
+                  <Select
+                    {...props}
+                    name="state"
+                    defaultValue={savedAddress?.state ?? ''}
+                    autoComplete="address-level1"
+                  >
                     <option value="" disabled>
                       Select state
                     </option>

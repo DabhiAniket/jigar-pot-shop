@@ -1,12 +1,15 @@
 'use client';
 
 import { useSyncExternalStore } from 'react';
-import { LIMITS, type FulfillmentMethod } from '@jmh/shared';
+import { LIMITS, type FulfillmentMethod, type ServerCartDTO } from '@jmh/shared';
+import { api } from './api/client';
 
 /**
- * The cart lives in localStorage (no customer accounts). It only stores what the shopper chose;
- * prices and stock are always re-quoted by the API, and the server recalculates everything at
- * checkout. The display snapshot (name, image, price) just avoids an empty flash on load.
+ * The cart lives in localStorage for instant UI. For a signed-in customer it also writes through
+ * to their server cart (the source of truth, restored on every sign-in), so it survives refreshes
+ * and devices. It only stores what the shopper chose; prices and stock are always re-quoted by
+ * the API, and the server recalculates everything at checkout. The display snapshot (name,
+ * image, price) just avoids an empty flash on load.
  */
 export interface CartItem {
   productId: string;
@@ -81,6 +84,22 @@ function commit(next: CartState) {
   listeners.forEach((listener) => listener());
 }
 
+let remote = false;
+
+/** Turned on while a customer is signed in: cart edits are then saved to their account. */
+export function setCartRemote(enabled: boolean) {
+  remote = enabled;
+}
+
+function pushLine(line: Pick<CartItem, 'productId' | 'variantId'>, quantity: number) {
+  if (!remote) return;
+  // Best effort: if it fails, the next sign-in re-syncs from the server, which stays authoritative.
+  void api('/account/cart/items', {
+    method: 'PUT',
+    body: { productId: line.productId, variantId: line.variantId, quantity },
+  }).catch(() => undefined);
+}
+
 function subscribe(listener: () => void) {
   ensureLoaded();
   listeners.add(listener);
@@ -130,6 +149,7 @@ export const cart = {
           -LIMITS.maxCartLines,
         );
     commit({ ...state, items });
+    pushLine(item, state.items.find((line) => sameLine(line, item))?.quantity ?? 0);
   },
   setQuantity(line: Pick<CartItem, 'productId' | 'variantId'>, quantity: number) {
     ensureLoaded();
@@ -142,6 +162,7 @@ export const cart = {
               : item,
           );
     commit({ ...state, items });
+    pushLine(line, Math.max(0, Math.min(quantity, LIMITS.maxLineQuantity)));
   },
   remove(line: Pick<CartItem, 'productId' | 'variantId'>) {
     this.setQuantity(line, 0);
@@ -157,6 +178,50 @@ export const cart = {
   clear() {
     ensureLoaded();
     commit({ ...EMPTY, fulfillment: state.fulfillment });
+  },
+  /** Replaces the local cart with the account's cart (items, with names and images from the quote). */
+  hydrate(server: ServerCartDTO) {
+    ensureLoaded();
+    const quoted = new Map(
+      (server.quote?.lines ?? []).map((line) => [
+        `${line.productId}:${line.variantId ?? ''}`,
+        line,
+      ]),
+    );
+    const items: CartItem[] = server.items.map((item) => {
+      const line = quoted.get(`${item.productId}:${item.variantId ?? ''}`);
+      return {
+        productId: item.productId,
+        variantId: item.variantId,
+        quantity: item.quantity,
+        name: line?.name ?? 'Item',
+        variantName: line?.variantName ?? null,
+        slug: line?.slug ?? '',
+        image: line?.image?.variants[0]?.url ?? null,
+        unitPrice: line?.unitPrice ?? 0,
+      };
+    });
+    commit({ ...state, items });
+  },
+  /**
+   * With `merge` (right after signing in or registering) the guest cart in this browser is folded
+   * into the account's saved cart. Without it (a plain page load while already signed in) the
+   * saved cart is just loaded: the server is the source of truth, so nothing is added twice.
+   */
+  async syncWithAccount(options: { merge: boolean }) {
+    ensureLoaded();
+    const response = options.merge
+      ? await api<{ data: ServerCartDTO }>('/account/cart/merge', {
+          body: {
+            items: state.items.map(({ productId, variantId, quantity }) => ({
+              productId,
+              variantId,
+              quantity,
+            })),
+          },
+        })
+      : await api<{ data: ServerCartDTO }>('/account/cart');
+    this.hydrate(response.data);
   },
 };
 

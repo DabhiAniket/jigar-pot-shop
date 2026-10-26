@@ -32,6 +32,7 @@ export default async function OrdersPage({
     q: param(raw.q),
     status: param(raw.status),
     channel: param(raw.channel),
+    cancellationRequest: param(raw.cancellationRequest),
     from: param(raw.from),
     to: param(raw.to),
     page: param(raw.page),
@@ -72,6 +73,15 @@ export default async function OrdersPage({
           <option value="whatsapp">WhatsApp</option>
           <option value="website">Website</option>
         </select>
+        <label className="flex items-center gap-2 text-xs font-semibold">
+          <input
+            type="checkbox"
+            name="cancellationRequest"
+            value="requested"
+            defaultChecked={query.cancellationRequest === 'requested'}
+          />
+          Cancellation requested
+        </label>
         <label className="text-xs font-semibold">
           From
           <input
@@ -123,6 +133,9 @@ export default async function OrdersPage({
                 <td>{FULFILLMENT_LABELS[order.fulfillment]}</td>
                 <td>
                   <OrderStatusBadge status={order.status} />
+                  {order.cancellationRequest === 'requested' ? (
+                    <div className="mt-1 text-xs font-semibold text-danger">Cancel requested</div>
+                  ) : null}
                 </td>
                 <td className="text-right">{order.itemCount}</td>
                 <td className="text-right font-semibold">{formatINR(order.total)}</td>

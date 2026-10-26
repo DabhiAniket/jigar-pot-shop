@@ -29,6 +29,7 @@ export function ProductCard({
         <ProductImage
           image={product.image}
           sizes={CARD_SIZES}
+          fit="contain"
           priority={priority}
           className="size-full transition-transform duration-700 ease-[var(--ease-craft)] group-hover:scale-[1.035]"
         />
@@ -36,6 +37,7 @@ export function ProductCard({
           <ProductImage
             image={product.secondaryImage}
             sizes={CARD_SIZES}
+            fit="contain"
             alt=""
             className="absolute inset-0 size-full opacity-0 transition-opacity duration-500 group-hover:opacity-100"
           />

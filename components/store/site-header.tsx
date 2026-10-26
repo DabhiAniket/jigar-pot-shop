@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { cartCount, useCart, useCartReady } from '@/lib/cart';
+import { useCustomer } from '@/lib/customer';
 import { cn } from '@/lib/utils';
 
 interface NavCategory {
@@ -22,6 +23,8 @@ export function SiteHeader({ categories }: { categories: NavCategory[] }) {
   const cart = useCart();
   const ready = useCartReady();
   const count = ready ? cartCount(cart) : 0;
+  const { customer } = useCustomer();
+  const accountHref = customer ? '/account' : '/account/login';
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 12);
@@ -207,6 +210,29 @@ export function SiteHeader({ categories }: { categories: NavCategory[] }) {
             </svg>
           </button>
           <Link
+            href={accountHref}
+            className="rounded-full p-2.5 hover:bg-brown/5"
+            aria-label={customer ? 'My account' : 'Sign in'}
+          >
+            <svg viewBox="0 0 24 24" className="size-5.5" aria-hidden="true">
+              <circle
+                cx="12"
+                cy="8.5"
+                r="3.5"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                fill="none"
+              />
+              <path
+                d="M5 19.5c.8-3.2 3.6-5 7-5s6.2 1.8 7 5"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                fill="none"
+                strokeLinecap="round"
+              />
+            </svg>
+          </Link>
+          <Link
             href="/cart"
             className="relative rounded-full p-2.5 hover:bg-brown/5"
             aria-label={`Cart, ${count} item${count === 1 ? '' : 's'}`}
@@ -317,6 +343,14 @@ export function SiteHeader({ categories }: { categories: NavCategory[] }) {
               <Link href="/track-order" className="rounded-xl px-3 py-2.5 hover:bg-cream-deep">
                 Track Order
               </Link>
+              <Link href={accountHref} className="rounded-xl px-3 py-2.5 hover:bg-cream-deep">
+                {customer ? 'My account' : 'Sign in'}
+              </Link>
+              {customer ? (
+                <Link href="/account/orders" className="rounded-xl px-3 py-2.5 hover:bg-cream-deep">
+                  My orders
+                </Link>
+              ) : null}
               <Link href="/cart" className="rounded-xl px-3 py-2.5 hover:bg-cream-deep">
                 Cart {count > 0 ? `(${count})` : ''}
               </Link>

@@ -80,7 +80,7 @@ export function MediaPicker({
                   <img
                     src={asset.variants[0]?.url}
                     alt={asset.alt || asset.originalFilename}
-                    className="aspect-square w-full object-cover"
+                    className="aspect-square w-full bg-cream-deep object-contain"
                     loading="lazy"
                   />
                 </button>

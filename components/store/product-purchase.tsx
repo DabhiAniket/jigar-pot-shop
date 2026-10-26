@@ -41,7 +41,13 @@ export function ProductGallery({ images, name }: { images: ImageDTO[]; name: str
                     : 'border-transparent hover:border-brown/20',
                 )}
               >
-                <ProductImage image={image} alt="" sizes="96px" className="size-20 md:size-24" />
+                <ProductImage
+                  image={image}
+                  alt=""
+                  sizes="96px"
+                  fit="contain"
+                  className="size-20 md:size-24"
+                />
               </button>
             </li>
           ))}

@@ -5,7 +5,7 @@ import { ORDER_STATUS_LABELS, type AdminOrderDetail, type OrderStatus } from '@j
 import { WhatsAppIcon } from '@/components/store/site-footer';
 import { Button, buttonClasses } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/dialog';
-import { Field, Input, Textarea } from '@/components/ui/form';
+import { Field, FormError, Input, Textarea } from '@/components/ui/form';
 import { useAdmin, useMutation } from './admin-context';
 import { Card } from './ui';
 
@@ -18,7 +18,25 @@ export function OrderActions({ order }: { order: AdminOrderDetail }) {
   const [reason, setReason] = useState('');
   const [noteText, setNoteText] = useState('');
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [shipment, setShipment] = useState({
+    provider: order.shipment?.provider ?? '',
+    trackingNumber: order.shipment?.trackingNumber ?? '',
+    trackingUrl: order.shipment?.trackingUrl ?? '',
+    estimatedDelivery: order.shipment?.estimatedDelivery ?? '',
+  });
+  const [rejectNote, setRejectNote] = useState('');
+  const shipmentMutation = useMutation();
+  const reject = useMutation();
   const writable = can('orders:write');
+  const openRequest =
+    order.cancellationRequest?.status === 'requested' ? order.cancellationRequest : null;
+  const shipmentBody = () => ({
+    provider: shipment.provider.trim(),
+    trackingNumber: shipment.trackingNumber.trim(),
+    trackingUrl: shipment.trackingUrl.trim() || null,
+    estimatedDelivery: shipment.estimatedDelivery || null,
+  });
+  const needsShipment = next === 'shipped' && order.fulfillment === 'delivery' && !order.shipment;
 
   const applyStatus = async () => {
     if (!next) return;
@@ -27,6 +45,7 @@ export function OrderActions({ order }: { order: AdminOrderDetail }) {
         status: next,
         note: statusNote || undefined,
         cancellationReason: next === 'cancelled' ? reason : undefined,
+        shipment: next === 'shipped' && shipment.provider.trim() ? shipmentBody() : undefined,
       },
       success: `Order marked ${ORDER_STATUS_LABELS[next].toLowerCase()}`,
     });
@@ -104,6 +123,18 @@ export function OrderActions({ order }: { order: AdminOrderDetail }) {
                 )}
               </Field>
             ) : null}
+            {next === 'shipped' ? (
+              <fieldset className="space-y-3 rounded-xl bg-cream p-3">
+                <legend className="px-1 text-sm font-semibold">
+                  Shipment details{needsShipment ? ' (required)' : ''}
+                </legend>
+                <ShipmentFields
+                  value={shipment}
+                  onChange={setShipment}
+                  errors={status.fieldErrors}
+                />
+              </fieldset>
+            ) : null}
             <Field label="Note for the history (optional)">
               {(props) => (
                 <Input
@@ -127,6 +158,89 @@ export function OrderActions({ order }: { order: AdminOrderDetail }) {
                 Cancelling returns the reserved stock to inventory.
               </p>
             ) : null}
+          </form>
+        </Card>
+      ) : null}
+
+      {writable && openRequest ? (
+        <Card title="Customer asked to cancel">
+          <p className="text-sm">“{openRequest.reason}”</p>
+          <p className="mt-1 text-xs text-brown-muted">
+            Requested{' '}
+            {new Date(openRequest.requestedAt).toLocaleString('en-IN', {
+              timeZone: 'Asia/Kolkata',
+            })}
+            . This is a request from the customer, not a cancellation.
+          </p>
+          <div className="mt-3 space-y-3">
+            {order.allowedTransitions.includes('cancelled') ? (
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => {
+                  setNext('cancelled');
+                  setReason(`Customer asked to cancel: ${openRequest.reason}`.slice(0, 300));
+                  setConfirmCancel(true);
+                }}
+              >
+                Approve and cancel order
+              </Button>
+            ) : null}
+            <Field
+              label="Or reject, with a note the customer will see"
+              error={reject.fieldErrors.note}
+            >
+              {(props) => (
+                <Input
+                  {...props}
+                  value={rejectNote}
+                  maxLength={300}
+                  onChange={(event) => setRejectNote(event.target.value)}
+                  placeholder="e.g. Already packed and ready to ship"
+                />
+              )}
+            </Field>
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={reject.busy}
+              disabled={!rejectNote.trim()}
+              onClick={async () => {
+                const result = await reject.run(`/orders/${order.id}/cancellation-request/reject`, {
+                  body: { note: rejectNote },
+                  success: 'Cancellation request rejected',
+                });
+                if (result) setRejectNote('');
+              }}
+            >
+              Reject request
+            </Button>
+          </div>
+        </Card>
+      ) : null}
+
+      {writable && ['ready_for_dispatch', 'shipped', 'delivered'].includes(order.status) ? (
+        <Card title="Shipment">
+          <form
+            className="space-y-3"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              await shipmentMutation.run(`/orders/${order.id}/shipment`, {
+                method: 'PUT',
+                body: shipmentBody(),
+                success: 'Shipment details saved',
+              });
+            }}
+          >
+            <FormError message={shipmentMutation.error} />
+            <ShipmentFields
+              value={shipment}
+              onChange={setShipment}
+              errors={shipmentMutation.fieldErrors}
+            />
+            <Button type="submit" size="sm" variant="secondary" loading={shipmentMutation.busy}>
+              Save shipment
+            </Button>
           </form>
         </Card>
       ) : null}
@@ -196,5 +310,68 @@ export function OrderActions({ order }: { order: AdminOrderDetail }) {
         onConfirm={() => void applyStatus()}
       />
     </div>
+  );
+}
+
+function ShipmentFields({
+  value,
+  onChange,
+  errors,
+}: {
+  value: {
+    provider: string;
+    trackingNumber: string;
+    trackingUrl: string;
+    estimatedDelivery: string;
+  };
+  onChange: (next: {
+    provider: string;
+    trackingNumber: string;
+    trackingUrl: string;
+    estimatedDelivery: string;
+  }) => void;
+  errors: Record<string, string[]>;
+}) {
+  const set = (key: keyof typeof value) => (event: React.ChangeEvent<HTMLInputElement>) =>
+    onChange({ ...value, [key]: event.target.value });
+  return (
+    <>
+      <Field label="Shipping provider" required error={errors.provider ?? errors.shipment}>
+        {(props) => (
+          <Input {...props} value={value.provider} maxLength={80} onChange={set('provider')} />
+        )}
+      </Field>
+      <Field label="Tracking number" required error={errors.trackingNumber}>
+        {(props) => (
+          <Input
+            {...props}
+            value={value.trackingNumber}
+            maxLength={80}
+            onChange={set('trackingNumber')}
+          />
+        )}
+      </Field>
+      <Field label="Tracking link (optional)" error={errors.trackingUrl}>
+        {(props) => (
+          <Input
+            {...props}
+            type="url"
+            value={value.trackingUrl}
+            maxLength={300}
+            onChange={set('trackingUrl')}
+          />
+        )}
+      </Field>
+      <Field label="Expected delivery (optional)" error={errors.estimatedDelivery}>
+        {(props) => (
+          <Input
+            {...props}
+            type="date"
+            value={value.estimatedDelivery}
+            onChange={set('estimatedDelivery')}
+          />
+        )}
+      </Field>
+    </>
   );
 }

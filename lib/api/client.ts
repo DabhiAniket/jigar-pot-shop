@@ -20,6 +20,20 @@ export function setCsrfToken(token: string | null): void {
   csrfToken = token;
 }
 
+let customerCsrfToken: string | null = null;
+
+/** Set after a customer signs in; sent only on customer routes, never on admin ones. */
+export function setCustomerCsrfToken(token: string | null): void {
+  customerCsrfToken = token;
+}
+
+/** Which anti-CSRF token (if any) belongs to this API path. */
+function csrfFor(path: string): string | null {
+  if (path.startsWith('/admin')) return csrfToken;
+  if (path.startsWith('/account') || path === '/orders') return customerCsrfToken;
+  return null;
+}
+
 interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
@@ -33,8 +47,8 @@ export async function api<T = unknown>(path: string, options: RequestOptions = {
   const headers: Record<string, string> = { accept: 'application/json', ...options.headers };
   if (options.body !== undefined && !(options.body instanceof FormData))
     headers['content-type'] = 'application/json';
-  if (method !== 'GET' && csrfToken && path.startsWith('/admin'))
-    headers['x-csrf-token'] = csrfToken;
+  const token = method === 'GET' ? null : csrfFor(path);
+  if (token) headers['x-csrf-token'] = token;
 
   let response: Response;
   try {
