@@ -6,10 +6,12 @@ import { ACCEPTED_IMAGE_MIME_TYPES, type MediaAssetDTO } from '@jmh/shared';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { FormError } from '@/components/ui/form';
-import { api, ClientApiError, uploadWithProgress } from '@/lib/api/client';
+import { api, ClientApiError, uploadToBlob, uploadWithProgress } from '@/lib/api/client';
 import { cn } from '@/lib/utils';
 
 const MAX_BYTES = 15 * 1024 * 1024;
+// Vercel functions reject request bodies over 4.5 MB; bigger files upload straight to Blob.
+const MAX_DIRECT_BYTES = 4 * 1024 * 1024;
 const ASPECTS = [
   { label: 'Square 1:1', value: 1, hint: 'Recommended for product cards' },
   { label: 'Portrait 4:5', value: 4 / 5 },
@@ -136,23 +138,41 @@ export function ImageUploadDialog({
     cancelled.current = false;
     setStep('uploading');
     setError(null);
-    const form = new FormData();
-    form.append('alt', alt.trim().slice(0, 200));
-    form.append(
-      'crop',
-      JSON.stringify({
-        x: Math.max(0, Math.round(area.x)),
-        y: Math.max(0, Math.round(area.y)),
-        width: Math.round(area.width),
-        height: Math.round(area.height),
-        rotation: Math.round(rotation),
-      }),
-    );
-    form.append('file', file);
-    const request = uploadWithProgress<{ data: MediaAssetDTO }>('/admin/media', form, setProgress);
-    abortRef.current = request.abort;
+    const cropArea = {
+      x: Math.max(0, Math.round(area.x)),
+      y: Math.max(0, Math.round(area.y)),
+      width: Math.round(area.width),
+      height: Math.round(area.height),
+      rotation: Math.round(rotation),
+    };
     try {
-      const { data } = await request.promise;
+      let created: { data: MediaAssetDTO };
+      if (file.size <= MAX_DIRECT_BYTES) {
+        const form = new FormData();
+        form.append('alt', alt.trim().slice(0, 200));
+        form.append('crop', JSON.stringify(cropArea));
+        form.append('file', file);
+        const request = uploadWithProgress<{ data: MediaAssetDTO }>(
+          '/admin/media',
+          form,
+          setProgress,
+        );
+        abortRef.current = request.abort;
+        created = await request.promise;
+      } else {
+        const controller = new AbortController();
+        abortRef.current = () => controller.abort();
+        const blobPathname = await uploadToBlob(file, setProgress, controller.signal);
+        created = await api<{ data: MediaAssetDTO }>('/admin/media', {
+          body: {
+            blobPathname,
+            originalName: file.name,
+            alt: alt.trim().slice(0, 200),
+            crop: cropArea,
+          },
+        });
+      }
+      const { data } = created;
       setStep('processing');
       // Poll until the worker has produced the WebP variants.
       for (let attempt = 0; attempt < 120 && !cancelled.current; attempt++) {

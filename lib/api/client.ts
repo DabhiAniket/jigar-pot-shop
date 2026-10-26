@@ -124,3 +124,31 @@ export function uploadWithProgress<T>(
   });
   return { promise, abort: () => xhr.abort() };
 }
+
+/**
+ * Files over a function's 4.5 MB request limit go browser → Vercel Blob directly. The API's
+ * blob-token route authorizes the session and issues a short-lived token for this one path;
+ * the server-side read-write token never reaches the browser. Returns the blob's pathname.
+ */
+export async function uploadToBlob(
+  file: File,
+  onProgress: (fraction: number) => void,
+  signal: AbortSignal,
+): Promise<string> {
+  const { upload } = await import('@vercel/blob/client');
+  const extension = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg';
+  try {
+    const blob = await upload(`client-uploads/${crypto.randomUUID()}.${extension}`, file, {
+      access: 'public',
+      contentType: file.type,
+      handleUploadUrl: '/api/v1/admin/media/blob-token',
+      headers: csrfToken ? { 'x-csrf-token': csrfToken } : undefined,
+      onUploadProgress: ({ percentage }) => onProgress(percentage / 100),
+      abortSignal: signal,
+    });
+    return blob.pathname;
+  } catch {
+    if (signal.aborted) throw new ClientApiError(0, 'ABORTED', 'Upload cancelled.');
+    throw new ClientApiError(0, 'UPLOAD_FAILED', 'The upload failed. Please try again.');
+  }
+}
