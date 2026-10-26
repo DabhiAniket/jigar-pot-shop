@@ -112,6 +112,7 @@ export function CartView() {
                     <ProductImage
                       image={line.image}
                       sizes="96px"
+                      fit="contain"
                       className="size-24"
                       alt={item.name}
                     />

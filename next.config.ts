@@ -14,7 +14,7 @@ const contentSecurityPolicy = [
   "img-src 'self' data: blob: https:",
   "media-src 'self' https:",
   "font-src 'self'",
-  `connect-src 'self' https://vercel.com${isDev ? ' ws: http://localhost:*' : ''}`,
+  `connect-src 'self' https://vercel.com https://*.public.blob.vercel-storage.com${isDev ? ' ws: http://localhost:*' : ''}`,
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",

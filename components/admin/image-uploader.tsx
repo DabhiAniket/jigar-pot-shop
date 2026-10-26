@@ -5,6 +5,7 @@ import Cropper, { type Area } from 'react-easy-crop';
 import { ACCEPTED_IMAGE_MIME_TYPES, type MediaAssetDTO } from '@jmh/shared';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
+import { Spinner } from '@/components/ui/spinner';
 import { FormError } from '@/components/ui/form';
 import { api, ClientApiError, uploadToBlob, uploadWithProgress } from '@/lib/api/client';
 import { cn } from '@/lib/utils';
@@ -20,7 +21,7 @@ const ASPECTS = [
   { label: 'Original', value: 0 },
 ];
 
-type Step = 'select' | 'crop' | 'preview' | 'uploading' | 'processing' | 'done';
+type Step = 'select' | 'loading' | 'crop' | 'preview' | 'uploading' | 'processing' | 'done';
 
 /** Renders exactly what the server will produce: rotate around the centre, then extract the crop. */
 async function renderPreview(source: ImageBitmap, crop: Area, rotation: number): Promise<string> {
@@ -44,16 +45,26 @@ async function renderPreview(source: ImageBitmap, crop: Area, rotation: number):
   return canvas.toDataURL('image/jpeg', 0.85);
 }
 
+/** An already processed image to crop again; the result is a new image, the original stays. */
+export interface EditSource {
+  id: string;
+  alt: string;
+  /** URL of the largest stored variant: crop coordinates are relative to this image. */
+  url: string;
+}
+
 export function ImageUploadDialog({
   open,
   onClose,
   onUploaded,
   defaultAlt = '',
+  source,
 }: {
   open: boolean;
   onClose: () => void;
   onUploaded: (asset: MediaAssetDTO) => void;
   defaultAlt?: string;
+  source?: EditSource;
 }) {
   const [step, setStep] = useState<Step>('select');
   const [file, setFile] = useState<File | null>(null);
@@ -97,6 +108,37 @@ export function ImageUploadDialog({
     [objectUrl],
   );
 
+  const sourceId = source?.id;
+  const sourceUrl = source?.url;
+  const sourceAlt = source?.alt;
+  const [loadKey, setLoadKey] = useState(0);
+  useEffect(() => {
+    if (!open || !sourceUrl) return;
+    let active = true;
+    (async () => {
+      setStep('loading');
+      setError(null);
+      try {
+        // Same-origin in development; Blob and CDN URLs allow cross-origin reads.
+        const response = await fetch(sourceUrl);
+        if (!response.ok) throw new Error(String(response.status));
+        const blob = await response.blob();
+        const decoded = await createImageBitmap(blob, { imageOrientation: 'from-image' });
+        if (!active) return;
+        setBitmap(decoded);
+        setObjectUrl(URL.createObjectURL(blob));
+        setAlt(sourceAlt ?? '');
+        setAspect(0); // start from the whole image so nothing is cut until the admin chooses
+        setStep('crop');
+      } catch {
+        if (active) setError('Could not load this image for editing. Check your connection.');
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [open, sourceId, sourceUrl, sourceAlt, loadKey]);
+
   const choose = async (selected: File | undefined) => {
     setError(null);
     if (!selected) return;
@@ -134,7 +176,7 @@ export function ImageUploadDialog({
   };
 
   const upload = async () => {
-    if (!file || !area) return;
+    if ((!file && !source) || !area) return;
     cancelled.current = false;
     setStep('uploading');
     setError(null);
@@ -147,11 +189,15 @@ export function ImageUploadDialog({
     };
     try {
       let created: { data: MediaAssetDTO };
-      if (file.size <= MAX_DIRECT_BYTES) {
+      if (source) {
+        created = await api<{ data: MediaAssetDTO }>(`/admin/media/${source.id}/recrop`, {
+          body: { alt: alt.trim().slice(0, 200), crop: cropArea },
+        });
+      } else if (file!.size <= MAX_DIRECT_BYTES) {
         const form = new FormData();
         form.append('alt', alt.trim().slice(0, 200));
         form.append('crop', JSON.stringify(cropArea));
-        form.append('file', file);
+        form.append('file', file!);
         const request = uploadWithProgress<{ data: MediaAssetDTO }>(
           '/admin/media',
           form,
@@ -162,11 +208,11 @@ export function ImageUploadDialog({
       } else {
         const controller = new AbortController();
         abortRef.current = () => controller.abort();
-        const blobPathname = await uploadToBlob(file, setProgress, controller.signal);
+        const blobPathname = await uploadToBlob(file!, setProgress, controller.signal);
         created = await api<{ data: MediaAssetDTO }>('/admin/media', {
           body: {
             blobPathname,
-            originalName: file.name,
+            originalName: file!.name,
             alt: alt.trim().slice(0, 200),
             crop: cropArea,
           },
@@ -220,14 +266,20 @@ export function ImageUploadDialog({
       onClose={close}
       busy={busy}
       size="xl"
-      title="Upload image"
-      description="Crop and preview, then the image is converted to optimised WebP sizes automatically."
+      title={source ? 'Edit image' : 'Upload image'}
+      description={
+        source
+          ? 'Crop, zoom or rotate the stored image. It is saved as a new image; the current one is kept.'
+          : 'Crop and preview, then the image is converted to optimised WebP sizes automatically.'
+      }
       footer={
         step === 'crop' ? (
           <>
-            <Button variant="secondary" onClick={reset}>
-              Choose another
-            </Button>
+            {source ? null : (
+              <Button variant="secondary" onClick={reset}>
+                Choose another
+              </Button>
+            )}
             <Button onClick={goPreview} disabled={!area}>
               Preview
             </Button>
@@ -249,7 +301,18 @@ export function ImageUploadDialog({
       }
     >
       <FormError message={error} />
-      {step === 'select' ? (
+      {step === 'loading' ? (
+        <div className="flex flex-col items-center gap-3 py-16" role="status">
+          {error ? (
+            <Button variant="secondary" onClick={() => setLoadKey((key) => key + 1)}>
+              Try again
+            </Button>
+          ) : (
+            <Spinner label="Loading image" />
+          )}
+        </div>
+      ) : null}
+      {step === 'select' && !source ? (
         <label
           onDragOver={(event) => {
             event.preventDefault();
@@ -283,7 +346,11 @@ export function ImageUploadDialog({
 
       {step === 'crop' && objectUrl && bitmap ? (
         <div className="grid gap-5 lg:grid-cols-[1fr_16rem]">
-          <div className="relative h-[52vh] min-h-72 overflow-hidden rounded-2xl bg-brown-deep">
+          {/* Blank corners (after rotating) are saved in this colour, so the editor shows the same. */}
+          <div
+            className="relative h-[52vh] min-h-72 overflow-hidden rounded-2xl"
+            style={{ backgroundColor: '#f6f0e5' }}
+          >
             <Cropper
               image={objectUrl}
               crop={crop}

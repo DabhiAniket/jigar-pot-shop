@@ -1,7 +1,18 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 /** Shared with 02-admin.spec.ts through the order list (the admin test updates this order). */
 const CUSTOMER = { name: 'Asha Mehta', phone: '98250 12345' };
+const PASSWORD = 'Terracotta-Kiln-48';
+
+async function register(page: Page, name: string, email: string, phone: string) {
+  await page.goto('/account/register');
+  await page.getByLabel('Full name').fill(name);
+  await page.getByLabel('Email').fill(email);
+  await page.getByLabel('Mobile number').fill(phone);
+  await page.locator('input[name=password]').fill(PASSWORD);
+  await page.getByRole('button', { name: 'Create account' }).click();
+  await expect(page).toHaveURL(/\/account$/);
+}
 
 test.describe('storefront', () => {
   test('homepage renders the hero, collections and products', async ({ page }) => {
@@ -46,7 +57,11 @@ test.describe('storefront', () => {
     await expect(page).toHaveTitle(/Clay Surahi/);
   });
 
-  test('add to cart, check out with WhatsApp and see the saved order', async ({ page }) => {
+  test('sign in, check out with WhatsApp and see the saved order in My orders', async ({
+    page,
+    browser,
+  }) => {
+    await register(page, CUSTOMER.name, 'asha.e2e@example.com', CUSTOMER.phone);
     await page.goto('/products/clay-surahi');
     await page.getByRole('button', { name: 'Increase quantity' }).click();
     await page.getByRole('button', { name: 'Add to cart', exact: true }).click();
@@ -58,14 +73,16 @@ test.describe('storefront', () => {
     await page.getByRole('link', { name: 'Proceed to checkout' }).click();
 
     await expect(page).toHaveURL(/\/checkout/);
-    await page.getByLabel('Full name').fill(CUSTOMER.name);
-    await page.getByLabel('Mobile number').fill(CUSTOMER.phone);
+    // Name and phone come from the account.
+    await expect(page.getByLabel('Full name')).toHaveValue(CUSTOMER.name);
     await page.getByText('Store pickup', { exact: true }).click();
     await page.getByRole('button', { name: /Place order & continue to WhatsApp/ }).click();
 
-    await expect(page).toHaveURL(/\/order\/JMH-\d{6}-[0-9A-Z]{5}\?token=/);
+    await expect(page).toHaveURL(/\/account\/orders\/JMH-\d{6}-[0-9A-Z]{5}\?placed=1/);
     const orderNumber = (await page.getByTestId('order-number').textContent())!.trim();
-    const whatsapp = await page.getByTestId('whatsapp-link').getAttribute('href');
+    const whatsapp = await page
+      .getByRole('link', { name: /Send your order on WhatsApp/ })
+      .getAttribute('href');
     const url = new URL(whatsapp!);
     expect(`${url.origin}${url.pathname}`).toBe('https://wa.me/919000000001');
     const text = url.searchParams.get('text')!;
@@ -73,13 +90,30 @@ test.describe('storefront', () => {
     expect(text).toContain('Clay Surahi × 2');
     expect(text).toContain('Total: ₹898');
 
-    // The cart is emptied and the order can be tracked with the phone number.
-    await page.goto('/track-order');
-    await page.getByLabel('Order number').fill(orderNumber);
-    await page.getByLabel('Mobile number').fill(CUSTOMER.phone);
-    await page.getByRole('button', { name: 'Track' }).click();
-    await expect(page.getByRole('heading', { name: `Order ${orderNumber}` })).toBeVisible();
-    await expect(page.getByText('Pending').first()).toBeVisible();
+    // It is listed under My orders, and the cart (also saved on the account) is empty.
+    await page.goto('/account/orders');
+    await expect(page.getByRole('link', { name: new RegExp(orderNumber) })).toBeVisible();
+    await expect(
+      page.getByRole('link', { name: new RegExp(orderNumber) }).getByText('Pending'),
+    ).toBeVisible();
+
+    // A different customer who knows the exact order number cannot see it.
+    const other = await browser.newContext();
+    const otherPage = await other.newPage();
+    await register(otherPage, 'Bhavin Joshi', 'bhavin.e2e@example.com', '98250 54321');
+    await otherPage.goto(`/account/orders/${orderNumber}`);
+    await expect(otherPage.getByRole('heading', { name: 'Order not found' })).toBeVisible();
+    await expect(otherPage.getByText(CUSTOMER.name)).toHaveCount(0);
+    await otherPage.goto('/account/orders');
+    await expect(otherPage.getByText('No orders yet')).toBeVisible();
+    await other.close();
+  });
+
+  test('checkout asks guests to sign in and keeps the cart', async ({ page }) => {
+    await page.goto('/products/clay-surahi');
+    await page.getByRole('button', { name: 'Add to cart', exact: true }).click();
+    await page.goto('/checkout');
+    await expect(page.getByRole('heading', { name: 'Sign in to place your order' })).toBeVisible();
   });
 
   test('unknown pages return the custom 404', async ({ page }) => {

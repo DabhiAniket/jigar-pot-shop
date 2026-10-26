@@ -75,6 +75,52 @@ test.describe('admin', () => {
     expect(srcset).toMatch(/thumb-240\.webp 240w/);
   });
 
+  test('re-crop an uploaded image without uploading it again', async ({ page }) => {
+    await signIn(page, FINAL);
+    await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+    await page.goto('/admin/products');
+    await page.getByRole('link', { name: 'E2E Glazed Pot' }).first().click();
+    const imageCard = page.getByRole('listitem').filter({ hasText: 'Main image' });
+    const before = await imageCard.locator('img').getAttribute('src');
+
+    await imageCard.getByRole('button', { name: 'Edit' }).click();
+    await expect(page.getByLabel('Crop area. Use the arrow keys to move the image.')).toBeVisible();
+    await expect(page.locator('input[type=file]')).toHaveCount(0); // no new upload needed
+    await page.getByRole('radio', { name: /Portrait 4:5/ }).check();
+    await page.getByRole('button', { name: 'Preview' }).click();
+    const preview = page.getByAltText('Preview of the cropped image');
+    await expect(preview).toBeVisible();
+    const previewRatio = await preview.evaluate(
+      (img: HTMLImageElement) => img.naturalWidth / img.naturalHeight,
+    );
+    expect(previewRatio).toBeCloseTo(0.8, 1);
+    await page.getByRole('button', { name: 'Upload & process' }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0, { timeout: 60_000 });
+
+    // The edited copy replaced the image in the form; the saved file has the previewed shape.
+    const after = await imageCard.locator('img').getAttribute('src');
+    expect(after).not.toBe(before);
+    await page.getByRole('button', { name: 'Save changes' }).click();
+    await expect(page.getByText('Product saved')).toBeVisible();
+    // The storefront page is cached briefly; poll until it serves the re-cropped image.
+    await expect
+      .poll(
+        async () => {
+          await page.goto('/products/e2e-glazed-pot');
+          const image = page.getByRole('main').locator('img').first();
+          return image.evaluate((img: HTMLImageElement) => {
+            const largest = img.srcset.split(',').at(-1)!.trim().split(' ')[0]!;
+            return fetch(largest)
+              .then((response) => response.blob())
+              .then((blob) => createImageBitmap(blob))
+              .then((bitmap) => Number((bitmap.width / bitmap.height).toFixed(2)));
+          });
+        },
+        { timeout: 30_000 },
+      )
+      .toBeCloseTo(previewRatio, 1);
+  });
+
   test('update the status of the storefront order', async ({ page }) => {
     await signIn(page, FINAL);
     await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
@@ -88,5 +134,36 @@ test.describe('admin', () => {
     await page.getByRole('button', { name: 'Update status' }).click();
     await expect(page.getByText('Confirmed with customer on WhatsApp')).toBeVisible();
     await expect(page.getByRole('heading', { level: 1 })).toContainText('Confirmed');
+  });
+
+  test('a customer cancellation request is approved by staff', async ({ page, browser }) => {
+    const customer = await browser.newContext();
+    const shopper = await customer.newPage();
+    await shopper.goto('/account/login');
+    await shopper.getByLabel('Email').fill('asha.e2e@example.com');
+    await shopper.locator('input[name=password]').fill('Terracotta-Kiln-48');
+    await shopper.getByRole('button', { name: 'Sign in' }).click();
+    await expect(shopper).toHaveURL(/\/account$/);
+    await shopper.goto('/account/orders');
+    await shopper.getByRole('link', { name: /JMH-/ }).first().click();
+    await shopper.getByRole('button', { name: 'Request cancellation' }).click();
+    await shopper.getByLabel('Why do you want to cancel?').fill('Ordered by mistake');
+    await shopper.getByRole('button', { name: 'Send request' }).click();
+    await expect(shopper.getByText('Waiting for the store')).toBeVisible();
+    await expect(shopper.getByRole('button', { name: 'Request cancellation' })).toHaveCount(0);
+
+    await signIn(page, FINAL);
+    await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+    await page.goto('/admin/orders?cancellationRequest=requested');
+    await expect(page.getByText('Cancel requested')).toBeVisible();
+    await page.locator('tbody a').first().click();
+    await expect(page.getByText('Customer asked to cancel')).toBeVisible();
+    await page.getByRole('button', { name: 'Approve and cancel order' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Cancel order' }).click();
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Cancelled');
+
+    await shopper.reload();
+    await expect(shopper.getByText('Cancelled at your request')).toBeVisible();
+    await customer.close();
   });
 });

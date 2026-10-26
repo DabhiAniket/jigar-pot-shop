@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useState } from 'react';
 import type { PublicOrderDTO } from '@jmh/shared';
 import { Button } from '@/components/ui/button';
@@ -16,6 +17,13 @@ export function TrackOrderForm() {
 
   return (
     <>
+      <p className="mt-6 max-w-2xl rounded-2xl bg-cream-deep p-4 text-sm text-brown-muted">
+        Placed your order while signed in? See it, with tracking and cancellation, under{' '}
+        <Link href="/account/orders" className="font-semibold text-terracotta-deep underline">
+          My orders
+        </Link>
+        . This page is for orders placed before accounts were introduced.
+      </p>
       <form
         className="mt-8 grid max-w-2xl gap-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end"
         onSubmit={async (event) => {

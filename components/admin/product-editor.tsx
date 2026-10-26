@@ -14,6 +14,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Checkbox, Field, FormError, Input, Select, Textarea } from '@/components/ui/form';
 import { useAdmin, useMutation } from './admin-context';
+import { ImageUploadDialog } from './image-uploader';
 import { MediaPicker } from './media-picker';
 import { Card } from './ui';
 
@@ -99,6 +100,7 @@ export function ProductEditor({
   const [seoTitle, setSeoTitle] = useState(product?.seo.title ?? '');
   const [seoDescription, setSeoDescription] = useState(product?.seo.description ?? '');
   const [picker, setPicker] = useState(false);
+  const [editIndex, setEditIndex] = useState<number | null>(null);
 
   const err = (path: string) => fieldErrors[path];
   const variantErr = (index: number) =>
@@ -310,7 +312,7 @@ export function ProductEditor({
                     <img
                       src={image.variants[1]?.url ?? image.variants[0]?.url}
                       alt={image.alt}
-                      className="aspect-square w-full rounded-xl object-cover"
+                      className="aspect-square w-full rounded-xl bg-cream-deep object-contain"
                     />
                     <label className="mt-2 block text-xs font-semibold">
                       Alt text
@@ -349,6 +351,9 @@ export function ProductEditor({
                           className="disabled:opacity-30"
                         >
                           →
+                        </button>
+                        <button type="button" onClick={() => setEditIndex(index)}>
+                          Edit
                         </button>
                         <button
                           type="button"
@@ -675,6 +680,42 @@ export function ProductEditor({
           </Card>
         </div>
       </fieldset>
+      <ImageUploadDialog
+        open={editIndex !== null}
+        onClose={() => setEditIndex(null)}
+        source={
+          editIndex !== null && images[editIndex]
+            ? {
+                id: images[editIndex].assetId,
+                alt: images[editIndex].alt,
+                url: images[editIndex].variants.at(-1)!.url,
+              }
+            : undefined
+        }
+        onUploaded={(asset) => {
+          // The edited copy takes the old image's place; the old image stays in the library.
+          setImages((current) =>
+            current.map((image, i) =>
+              i === editIndex
+                ? {
+                    assetId: asset.id,
+                    alt: asset.alt,
+                    width: asset.width ?? 0,
+                    height: asset.height ?? 0,
+                    placeholder: asset.placeholder,
+                    variants: asset.variants.map(({ name, url, width, height }) => ({
+                      name,
+                      url,
+                      width,
+                      height,
+                    })),
+                  }
+                : image,
+            ),
+          );
+          setEditIndex(null);
+        }}
+      />
       <MediaPicker
         open={picker}
         onClose={() => setPicker(false)}

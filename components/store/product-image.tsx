@@ -64,8 +64,9 @@ export function ProductImage({
         image.placeholder
           ? {
               backgroundImage: `url(${image.placeholder})`,
-              backgroundSize: 'cover',
+              backgroundSize: fit === 'cover' ? 'cover' : 'contain',
               backgroundPosition: 'center',
+              backgroundRepeat: 'no-repeat',
             }
           : undefined
       }

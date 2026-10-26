@@ -127,7 +127,32 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
                 <p className="text-sm text-brown-muted">Customer collects from the store.</p>
               )}
               {order.cancellationReason ? (
-                <p className="mt-3 text-sm text-danger">Cancelled: {order.cancellationReason}</p>
+                <p className="mt-3 text-sm text-danger">
+                  Cancelled
+                  {order.cancelledBy
+                    ? ` by ${order.cancelledBy.kind === 'customer_request' ? 'staff, at the customer’s request' : 'staff'} (${order.cancelledBy.byName ?? 'unknown'}, ${formatDateTime(order.cancelledBy.at)})`
+                    : ''}
+                  : {order.cancellationReason}
+                </p>
+              ) : null}
+              {order.cancellationRequest && order.cancellationRequest.status !== 'requested' ? (
+                <p className="mt-2 text-sm text-brown-muted">
+                  Customer cancellation request {order.cancellationRequest.status}
+                  {order.cancellationRequest.resolvedByName
+                    ? ` by ${order.cancellationRequest.resolvedByName}`
+                    : ''}
+                  : “{order.cancellationRequest.reason}”
+                </p>
+              ) : null}
+              {order.shipment ? (
+                <p className="mt-3 text-sm">
+                  Shipped with {order.shipment.provider} · {order.shipment.trackingNumber}
+                </p>
+              ) : null}
+              {!order.hasAccount ? (
+                <p className="mt-2 text-xs text-brown-muted">
+                  Placed as a guest, before customer accounts existed.
+                </p>
               ) : null}
               <p className="mt-3 text-xs text-brown-muted">
                 Stock {order.inventory.committed ? 'reserved at checkout' : 'not tracked'}
