@@ -60,25 +60,8 @@ export function CheckoutForm() {
       </EmptyState>
     );
   }
-  if (!customer) {
-    return (
-      <EmptyState
-        title="Sign in to place your order"
-        action={
-          <div className="flex flex-wrap justify-center gap-3">
-            <ButtonLink href="/account/login?next=/checkout">Sign in</ButtonLink>
-            <ButtonLink href="/account/register?next=/checkout" variant="secondary">
-              Create account
-            </ButtonLink>
-          </div>
-        }
-      >
-        Orders are saved to your account so only you can view and track them. Your cart is kept.
-      </EmptyState>
-    );
-  }
   const savedAddress =
-    customer.addresses.find((address) => address.isDefault) ?? customer.addresses[0];
+    customer?.addresses.find((address) => address.isDefault) ?? customer?.addresses[0];
 
   const delivery = state.fulfillment === 'delivery';
   const fieldError = (path: string) => errors[path];
@@ -123,23 +106,23 @@ export function CheckoutForm() {
         body,
         headers: { 'idempotency-key': idempotencyKey() },
       });
-      const { order } = response.data;
+      const { order, accessToken } = response.data;
       try {
         sessionStorage.removeItem(IDEMPOTENCY_STORAGE);
       } catch {
         // ignore
       }
       cart.clear();
-      router.replace(`/account/orders/${order.orderNumber}?placed=1`);
+      // Signed-in orders live in the account; a guest gets a private link to the confirmation.
+      router.replace(
+        accessToken
+          ? `/order/${order.orderNumber}?token=${encodeURIComponent(accessToken)}`
+          : `/account/orders/${order.orderNumber}?placed=1`,
+      );
     } catch (error) {
       submittingRef.current = false;
       setSubmitting(false);
       if (error instanceof ClientApiError) {
-        if (error.status === 401) {
-          // The session ended while the form was open; the cart is saved, so sign in and return.
-          router.push('/account/login?next=/checkout');
-          return;
-        }
         setErrors(error.fields);
         // A changed cart is a new checkout attempt and needs a fresh key.
         if (
@@ -189,6 +172,19 @@ export function CheckoutForm() {
           <h2 id="contact-title" className="text-2xl font-medium">
             Your details
           </h2>
+          {customer ? null : (
+            <p className="rounded-2xl bg-cream-deep p-4 text-sm text-brown-muted">
+              Checking out as a guest. You will get an order number and a private link to follow
+              your order.{' '}
+              <Link
+                href="/account/login?next=/checkout"
+                className="font-semibold text-terracotta-deep underline"
+              >
+                Sign in
+              </Link>{' '}
+              to use saved details and see all your orders in one place.
+            </p>
+          )}
           <Field label="Full name" required error={fieldError('customer.name')}>
             {(props) => (
               <Input
@@ -196,7 +192,7 @@ export function CheckoutForm() {
                 name="name"
                 autoComplete="name"
                 maxLength={80}
-                defaultValue={customer.name}
+                defaultValue={customer?.name}
               />
             )}
           </Field>
@@ -215,7 +211,7 @@ export function CheckoutForm() {
                 autoComplete="tel-national"
                 maxLength={16}
                 placeholder="98765 43210"
-                defaultValue={customer.phone}
+                defaultValue={customer?.phone}
               />
             )}
           </Field>

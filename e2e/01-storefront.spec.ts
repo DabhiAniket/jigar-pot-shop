@@ -109,11 +109,46 @@ test.describe('storefront', () => {
     await other.close();
   });
 
-  test('checkout asks guests to sign in and keeps the cart', async ({ page }) => {
+  test('a guest can check out without signing in and track the order', async ({
+    page,
+    browser,
+  }) => {
     await page.goto('/products/clay-surahi');
     await page.getByRole('button', { name: 'Add to cart', exact: true }).click();
     await page.goto('/checkout');
-    await expect(page.getByRole('heading', { name: 'Sign in to place your order' })).toBeVisible();
+    await expect(page.getByText(/Checking out as a guest/)).toBeVisible();
+    await page.getByLabel('Full name').fill('Guest Buyer');
+    await page.getByLabel('Mobile number').fill('98250 66666');
+    await page.getByText('Store pickup', { exact: true }).click();
+    await page.getByRole('button', { name: /Place order & continue to WhatsApp/ }).click();
+
+    await expect(page).toHaveURL(/\/order\/JMH-\d{6}-[0-9A-Z]{5}\?token=/);
+    const orderNumber = (await page.getByTestId('order-number').textContent())!.trim();
+
+    // The order number alone shows nothing; the phone number it was placed with does.
+    const stranger = await browser.newContext();
+    const other = await stranger.newPage();
+    await other.goto(`/order/${orderNumber}`);
+    await expect(other.getByText(orderNumber)).toHaveCount(0);
+    await other.goto('/track-order');
+    await other.getByLabel('Order number').fill(orderNumber);
+    await other.getByLabel('Mobile number').fill('98250 00000');
+    await other.getByRole('button', { name: 'Track' }).click();
+    await expect(other.getByRole('heading', { name: `Order ${orderNumber}` })).toHaveCount(0);
+    await other.getByLabel('Mobile number').fill('98250 66666');
+    await other.getByRole('button', { name: 'Track' }).click();
+    await expect(other.getByRole('heading', { name: `Order ${orderNumber}` })).toBeVisible();
+
+    // A signed-in customer cannot open it from their own account.
+    await register(
+      other,
+      'Curious Neighbour',
+      `neighbour.${Date.now()}@example.com`,
+      '98250 55551',
+    );
+    await other.goto(`/account/orders/${orderNumber}`);
+    await expect(other.getByRole('heading', { name: 'Order not found' })).toBeVisible();
+    await stranger.close();
   });
 
   test('unknown pages return the custom 404', async ({ page }) => {
